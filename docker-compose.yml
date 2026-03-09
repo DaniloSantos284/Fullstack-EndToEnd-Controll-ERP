@@ -1,0 +1,52 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: stock_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: 
+      - "${PORT_DB}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u${DB_USER}", "-p${DB_PASSWORD}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+      
+  api:
+    build: ./backend
+    container_name: stock_api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_HOST=${DB_HOST}
+      - PORT_DB=${PORT_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/usr/src/app/uploads
+    ports:
+      - "${PORT_APP}:4000"
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+# Definição das redes e volumes
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  db_data:

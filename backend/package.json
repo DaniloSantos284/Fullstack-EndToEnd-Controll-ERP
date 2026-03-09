@@ -1,0 +1,22 @@
+{
+  "name": "stock",
+  "version": "1.0.0",
+  "description": "Sistema de estoque com Node.js, TypeScript e MySQL",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.19.2",
+    "mysql2": "^3.9.7"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.19.37",
+    "tsx": "^4.15.7",
+    "typescript": "^5.9.3"
+  }
+}
