@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "last_run": "2026-09-25T03:44:41.983Z",
+    "root": "/mnt/c/Users/ambiente_dev_pessoal/Desktop/projetos-pessoais/erp_full_stack",
+    "include_patterns": [
+      "backend/src/**/*.ts"
+    ],
+    "exclude_patterns": [
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      "**/__tests__/**",
+      "docs/**",
+      "dist/**",
+      "node_modules/**"
+    ],
+    "exceptions": []
+  },
+  "file_hashes": {
+    "backend/src/app.ts": "e424f52dcfe46e31d498c572ce899a15",
+    "backend/src/application/use-cases/AddStockEntryUseCase.ts": "5d859250e8fa25f2d3f3b1e5db019cbb",
+    "backend/src/application/use-cases/AddStockExitUseCase.ts": "24114236636313b2bf53ac58e7f6c03c",
+    "backend/src/application/use-cases/CreateProductUseCase.ts": "0e494c30306d2f7253c83dcfd41189e1",
+    "backend/src/application/use-cases/GetProductDetailsUseCase.ts": "acbf88d10927d315f11260b379eae9a7",
+    "backend/src/application/use-cases/ListProductMovementsUseCase.ts": "aad051d5f25ed1f6da21b77934818914",
+    "backend/src/application/use-cases/ListProductsUseCase.ts": "94dc2a7008b548a0e9189037638eb910",
+    "backend/src/application/use-cases/errors/AppError.ts": "ff6deb8fd3fabc7d1eb798c191fdf184",
+    "backend/src/config/env.ts": "9d529b887a56f9ea45f3f0931f52b6f8",
+    "backend/src/domain/entities/Product.ts": "1aacba996364cfacf628b1813b0aee3f",
+    "backend/src/domain/entities/StockMovement.ts": "b633de5c198a47ec1c81a3c7bde46dd1",
+    "backend/src/domain/enums/ProductCategory.ts": "eb911042c4569f238d9b57c8e652a0f7",
+    "backend/src/domain/enums/StockMovementType.ts": "061f99516fec7e0df7d69519dc36ba5e",
+    "backend/src/domain/repositories/ProductRepository.ts": "f01a3466d66a90f9fc64c1342f7e4e0a",
+    "backend/src/domain/repositories/StockMovementRepository.ts": "5995eb07646516353449f1463f52bda8",
+    "backend/src/http/controllers/AddStockEntryController.ts": "976592abfd83eadd44a03b0ecabd3c84",
+    "backend/src/http/controllers/AddStockExitController.ts": "2efbeeefaead9341c3610898aa16d6b1",
+    "backend/src/http/controllers/CreateProductController.ts": "90810740540427217e0ebeb038b185d5",
+    "backend/src/http/controllers/GetProductDetailsController.ts": "5f668bec3d1f9e81a1e53d748f2fad2c",
+    "backend/src/http/controllers/ListProductMovementsController.ts": "a2cdfd208613f6effbd72f55278b4160",
+    "backend/src/http/controllers/ListProductsController.ts": "d0d3d6fa6aad43bddb98c26fe29066db",
+    "backend/src/http/middlewares/errorHandler.ts": "785020ceeaf0b2d1715081b0e8ac934a",
+    "backend/src/http/routes/products.routes.ts": "b2d61d28b661d5a324e6438236af9fea",
+    "backend/src/infra/db/mysql/connection.ts": "202115a43260f5d87faf35a37530d534",
+    "backend/src/infra/db/mysql/mappers/StockMovementMapper.ts": "6f33cf8a585366dd149556556dbdedc5",
+    "backend/src/infra/db/mysql/repositories/MySqlProductRepository.ts": "086537b50d7766b650a6c454d565d9e4",
+    "backend/src/infra/db/mysql/repositories/MySqlStockMovementRepository.ts": "016ed4727ccb43ad808f88222047a24a",
+    "backend/src/server.ts": "cc22f4a1b51716d851bb6c2f38b3d76a"
+  },
+  "folder_hashes": {
+    ".": "",
+    "backend": "31eae7179f1a31712623c5cf29936b18",
+    "backend/src": "31eae7179f1a31712623c5cf29936b18",
+    "backend/src/application": "e87068524dfe13585d4e70e2a3614bdc",
+    "backend/src/application/use-cases": "e87068524dfe13585d4e70e2a3614bdc",
+    "backend/src/application/use-cases/errors": "6dfcd38f1714ed28cb171a79d7a54739",
+    "backend/src/config": "dc999120e6be511ed4372b9182b638bb",
+    "backend/src/domain": "b1dfb7d4285c2ceb8c544587e79a7bca",
+    "backend/src/domain/entities": "be8373c9599d056de17098a8d3fb3f5d",
+    "backend/src/domain/enums": "00a7b111b261ff23cd8bc827f5d76567",
+    "backend/src/domain/repositories": "8c8b18d65cfd49ee57a018d7f604d629",
+    "backend/src/http": "c557185f204677c38ffe5058b12f1e53",
+    "backend/src/http/controllers": "b3b7782dfab62f493b4de47f00cb49ea",
+    "backend/src/http/middlewares": "6eda116bdc858edba8a29057a3c90366",
+    "backend/src/http/routes": "a513d8c79a958c2c2e461e48c9323806",
+    "backend/src/infra": "adc78b327a8cd0417177aac48cf6d09e",
+    "backend/src/infra/db": "adc78b327a8cd0417177aac48cf6d09e",
+    "backend/src/infra/db/mysql": "adc78b327a8cd0417177aac48cf6d09e",
+    "backend/src/infra/db/mysql/mappers": "fa2562a602fbf93d2297df627ab67838",
+    "backend/src/infra/db/mysql/repositories": "71d2e0538d6fa8b7b9e6fad22e868519"
+  }
+}
