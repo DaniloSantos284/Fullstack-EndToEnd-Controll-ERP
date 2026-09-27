@@ -7,6 +7,7 @@ Serviço REST de estoque em Node.js, Express e TypeScript. Expõe operações de
 ## Entry points and execution
 
 - `npm run dev` executa `tsx watch src/server.ts`; `npm run build` compila `src/` para `dist/`; `npm start` executa `dist/server.js`.
+- Testes: Jest e ts-jest são configurados em `jest.config.cjs`, com testes em `tests/unit/` e `tests/http/`. Supertest acessa a aplicação Express pelo helper `tests/helpers/http-client.ts`; o setup do Jest substitui o módulo de conexão por um mock, sem MySQL real. Os scripts incluem execução, watch, cobertura, CI e checagem de tipos separada com `tsconfig.test.json`. Convenções, versões e limites estão em [`tests/README.md`](tests/README.md).
 - `src/server.ts` é o ponto de entrada: obtém `app` e `env`, então chama `app.listen(env.port)`.
 - O `Dockerfile` instala dependências, compila e executa `node dist/server.js`. O Compose constrói este diretório como o serviço `api`, injeta o `.env` da raiz e depende do healthcheck do MySQL.
 
