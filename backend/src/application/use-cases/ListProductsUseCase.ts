@@ -26,7 +26,7 @@ export class ListProductsUseCase {
             price: product.price,
             category: product.category,
             imageUrl: product.imageUrl,
-            quantity: product.quantity, // Cálculo via movements
+            quantity: product.quantity,
         }));
     }
 }

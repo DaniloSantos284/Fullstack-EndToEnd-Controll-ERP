@@ -1,6 +1,6 @@
 # Ciclo de request até a persistência
 
-> **Estado documentado:** fluxo implementado hoje. Os caminhos descritos dependem de o processo conseguir inicializar; há bloqueios de compilação e configuração registrados na [visão geral](overview.md#limitações-arquiteturais-relevantes) e na documentação de [runtime](../operations/runtime.md).
+> **Estado documentado:** fluxo implementado hoje. Os caminhos descritos dependem de o processo receber uma configuração de ambiente válida; a execução local e em contêiner está documentada em [runtime](../operations/runtime.md).
 
 ## Visão do fluxo comum
 
@@ -37,7 +37,7 @@ O ciclo de requests só existe após a seguinte sequência de carregamento:
 5. A aplicação Express instala, nesta ordem: parser JSON, arquivos estáticos `/uploads`, router `/api` e middleware de erro.
 6. `server.ts` tenta chamar `app.listen(env.port)`.
 
-O passo 6, os acessos à configuração da conexão e a importação de Zod têm inconsistências que bloqueiam uma compilação/instalação limpa no estado atual. O fluxograma a seguir, portanto, descreve a intenção executável codificada, não uma inicialização validada em produção.
+O módulo de configuração valida o ambiente com Zod, e `server.ts` inicia a escuta com a porta normalizada exportada por esse módulo. O fluxograma descreve a sequência de inicialização implementada.
 
 ## Entrada e validação HTTP
 

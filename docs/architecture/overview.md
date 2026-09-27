@@ -92,10 +92,10 @@ O banco possui duas tabelas previstas:
 | Express 4 | Servidor, router, JSON, arquivos estáticos e middleware de erro. |
 | TypeScript | Compilação para `dist/`, conforme `tsconfig.json`. |
 | `mysql2/promise` | Cria um `Pool` e executa SQL com `execute`. |
-| MySQL 8 | Serviço `db` configurado no Compose e destino das tabelas. |
+| MySQL 9.7 LTS / `mysql:9.7` | Serviço `db` configurado no Compose e destino das tabelas. |
 | `dotenv/config` | Carrega variáveis de ambiente antes da validação. |
-| Zod | É importado em `config/env.ts` para validar ambiente. Não está declarado no `package.json` nem no lockfile atuais. |
-| Docker/Compose | O Dockerfile compila o backend; o Compose inicia `db` e `api`, monta `init.sql` e `uploads`. |
+| Zod | Valida o ambiente em `config/env.ts` e está declarado nas dependências do backend. |
+| Docker/Compose | O Dockerfile multi-stage usa Node 22, Corepack e pnpm; o runtime usa apenas dependências de produção e o usuário `node`. O Compose inicia `db` e `api`, monta `init.sql` e o diretório versionado `uploads`, e possui valores padrão de desenvolvimento. |
 
 O módulo de conexão cria um único `Pool` durante o carregamento. Ele não recebe conexão por request e os repositórios usam esse pool global.
 
@@ -126,24 +126,17 @@ O caminho codificado de inicialização é:
 3. `config/env.ts` carrega `dotenv/config`, valida as variáveis com Zod e, em caso de falha, lança erro antes de o servidor escutar uma porta.
 4. Se essa etapa prosseguir, `connection.ts` cria o pool MySQL. Em seguida, o módulo de rotas faz a composição manual de repositórios, casos de uso e controllers.
 5. `app.ts` cria o Express, aplica `express.json()`, expõe `/uploads`, monta o router em `/api` e registra o `errorHandler` após as rotas.
-6. `server.ts` chama `app.listen(...)` com a porta que espera obter da configuração.
-
-Esse é o fluxo presente no código, mas ele não se conclui de forma compilável/executável em uma instalação limpa pelos bloqueios listados abaixo. A documentação de [runtime](../operations/runtime.md) registra em detalhe a divergência de variáveis e portas entre aplicação, Dockerfile e Compose.
+6. `server.ts` chama `app.listen(...)` com a porta normalizada pela configuração.
 
 ## Limitações arquiteturais relevantes
 
 ### Inicialização, configuração e entrega
 
-- `env.ts` produz chaves em maiúsculas (`PORT`, `DB_HOST`, `DB_USER`, `DB_PASSWORD` e `DB_DATABASE`), enquanto `server.ts` e `connection.ts` acessam propriedades camelCase inexistentes, como `env.port` e `env.dbHost`. Isso é erro de tipo e impede a compilação TypeScript.
-- `zod` é importado, mas não é dependência declarada no manifesto ou lockfile. Uma instalação limpa não contém uma dependência necessária ao módulo de configuração.
 - O schema exige `PORT_DB`, mas a criação do pool não envia `port`; usa limite de conexão fixo `10`, ignorando `DB_CONNECTION_LIMIT` validado.
-- A porta padrão do processo é `3333`, enquanto Dockerfile e Compose expõem/encaminham a porta interna `4000`; o Compose não define `PORT=4000`.
-- A leitura de `.env` não fixa caminho. A execução local do pacote `backend` e a orientação de usar `.env` na raiz não estão alinhadas.
 - Não há tratamento de encerramento gracioso do servidor nem fechamento explícito do pool.
 
 ### Modelo de domínio e persistência
 
-- `Product.price` e `Product.category` são privados, mas casos de uso e repositório os acessam externamente. Além de violar o encapsulamento declarado, são erros de compilação TypeScript.
 - Na reconstituição, `MySqlProductRepository` cria um novo `Product` (que gera UUID) e então substitui seu `id` usando `(product as any).id`. Não há factory ou caminho de reconstituição tipado.
 - A reconstituição adiciona movimentos com `Product.addMovement`. Como a consulta traz os movimentos em ordem decrescente de data, uma saída histórica pode ser validada antes das entradas que a sustentam e falhar apesar de o histórico persistido ser válido.
 - A coluna persistida `products.quantity` e o saldo derivado de `stock_movements` coexistem. Somente a criação grava a coluna; entradas e saídas não a atualizam, e leituras a ignoram. As duas representações podem divergir.

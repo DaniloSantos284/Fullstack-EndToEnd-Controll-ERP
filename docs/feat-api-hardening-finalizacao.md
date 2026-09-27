@@ -6,8 +6,6 @@
 
 - `feat/api-hardening` e `main` apontam para o mesmo commit: `fd0f381`; não há commits funcionais na branch.
 - Há 36 arquivos **rastreados** alterados somente por CRLF/whitespace, e `git diff --check` falha por esse ruído. Os artefatos de documentação/mapas ainda não rastreados — `docs/`, `AGENTS.md`, `codemap.md` e `backend/**/codemap.md` — são separados desse conjunto.
-- No workspace atual, `npm --prefix backend run build` falha com `tsc: Permission denied`. É um sintoma do workspace atual, não prova de defeito do código: revalidar após `npm --prefix backend ci` em checkout limpo.
-- Há bloqueios estáticos: `zod` é importado mas não está declarado em `backend/package.json`; o contrato de `env` não corresponde aos consumidores; membros privados de `Product` são acessados externamente; e a reconstituição de `id` usa `(product as any).id`.
 
 A primeira ação deve ser uma mudança isolada de higiene: descartar/reverter o ruído local, adicionar `.gitattributes` para normalizar arquivos texto em LF e confirmar que `git diff --check` passa. Essa mudança não deve ser misturada com alterações funcionais de hardening nem com o diretório `docs/` não rastreado.
 
@@ -47,13 +45,13 @@ Arquivos prováveis: `.gitattributes`, `.gitignore`, `.dockerignore` e a raiz do
 
 ### 4.2 Baseline de build, configuração e Docker
 
-Entregáveis: corrigir/revalidar a execução de `tsc` após `npm --prefix backend ci`; declarar `zod` em `backend/package.json` e lockfile; e fazer schema em `backend/src/config/env.ts` e consumidores adotarem o mesmo contrato. Esse contrato pode exportar nomes uppercase ou camelCase, desde que a interface pública e todos os acessos sejam coerentes.
+Entregáveis: revalidar a execução de `tsc` após `pnpm --dir backend install --frozen-lockfile`; manter `zod` declarado em `backend/package.json` e lockfile; e garantir que o schema em `backend/src/config/env.ts` e seus consumidores adotem o mesmo contrato. Esse contrato pode exportar nomes uppercase ou camelCase, desde que a interface pública e todos os acessos sejam coerentes.
 
-Como o Compose lê `.env` na raiz, criar e manter uma única estratégia com `.env.example` também na raiz, sem segredos, para as substituições do Compose e variáveis documentadas da API. Se houver execução da API fora do Compose, documentar o mesmo contrato, sem exemplos divergentes. Alinhar porta de schema, aplicação e Docker: hoje o Docker expõe/mapeia `4000` e o default de `PORT` é `3333`.
+Manter `.env.example` na raiz, sem segredos, para documentar as substituições opcionais do Compose e as variáveis da API. O Compose inicia com seus valores padrão de desenvolvimento quando `.env` está ausente; para personalizá-los, copiar o template para `.env`. Se houver execução da API fora do Compose, documentar o mesmo contrato, sem exemplos divergentes.
 
 Separar `DB_PORT` interno (porta `3306` usada pela API na rede Compose) de `DB_PUBLISHED_PORT` (mapeamento opcional para o host). No Compose, a API deve usar host `db` e não receber a senha root do MySQL. Parametrizar o banco; `db/init.sql` não deve fixar `stockdb` sem correspondência com a configuração, e não deve ser tratado como migration de volumes já existentes.
 
-O alvo é Node LTS suportado, com `npm ci`, imagem multi-stage, runtime apenas com dependências de produção e usuário não-root. Incluir healthcheck da API, hoje ausente; a publicação da porta do banco deve ser opcional.
+O alvo é Node LTS suportado, com Corepack habilitado, `pnpm install --frozen-lockfile`, imagem multi-stage, runtime apenas com dependências de produção e usuário não-root. Incluir healthcheck da API, hoje ausente; a publicação da porta do banco deve ser opcional.
 
 Arquivos prováveis: `.env.example`, `backend/package.json`, lockfile, `backend/src/config/env.ts`, `backend/Dockerfile`, `docker-compose.yml` e `db/init.sql`.
 
@@ -111,7 +109,7 @@ Arquivos prováveis: workflow em `.github/workflows/`, testes em `backend/`, `RE
 
 | Área | Evidência testável |
 | --- | --- |
-| Build | Em checkout limpo, `npm --prefix backend ci` e `npm --prefix backend run build` terminam com sucesso. |
+| Build | Em checkout limpo, `pnpm --dir backend install --frozen-lockfile` e `pnpm --dir backend build` terminam com sucesso. |
 | Ambiente | `.env.example` da raiz valida, não contém segredo e nomes/portas batem entre schema, app, `backend/Dockerfile`, `docker-compose.yml` e banco; `DB_PORT=3306` é interno e `DB_PUBLISHED_PORT` é opcional. |
 | Erros | Casos exercitados retornam `{ code, message, requestId }` com `400`, `404`, `409`, `413`, `429`, `503` e `500` corretos, sem leak de stack/SQL/segredo. |
 | Movimentos | Entrada aumenta saldo; saída válida reduz; saída sem saldo retorna `409`; reconstituição não aplica validação de comando novo. |
@@ -132,9 +130,9 @@ Executar os comandos abaixo a partir da raiz do repositório e em checkout limpo
 ```bash
 git diff --check
 git diff --check "$(git merge-base origin/main HEAD)..HEAD"
-npm --prefix backend ci
-npm --prefix backend run build
-npm --prefix backend test
+pnpm --dir backend install --frozen-lockfile
+pnpm --dir backend build
+pnpm --dir backend test
 ```
 
 Como alternativa/defesa adicional no CI, usar `git show --check` no range da branch. Validar o container com `docker compose config`, seguido de build/subida e inspeção dos logs/health. Com o serviço pronto, executar testes HTTP contra produtos e movimentos, cobrindo payload excessivo, JSON malformado, rota ausente, rate limit, CORS condicional e concorrência. Os comandos HTTP concretos devem usar porta, host, health path e credenciais definidos pela implementação; não há script de teste existente a ser invocado hoje.

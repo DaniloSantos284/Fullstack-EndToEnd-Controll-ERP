@@ -7,7 +7,7 @@ O `tsx` continua sendo usado apenas no desenvolvimento da aplicação.
 ## Versões
 
 Versões estáveis verificadas no registro oficial npm em **26/09/2026**, fixadas
-exatamente no `package.json` e reproduzidas pelo `package-lock.json`:
+exatamente no `package.json` e reproduzidas pelo `pnpm-lock.yaml`:
 
 | Pacote | Versão | Referência |
 | --- | --- | --- |
@@ -22,10 +22,9 @@ seu número de versão principal não precisa coincidir com o do Jest. O projeto
 TypeScript 5.9.3. As APIs de teste são importadas de `@jest/globals`, dispensando
 `@types/jest` e evitando globais implícitos.
 
-Use uma versão corrigida do Node 24 LTS. O Dockerfile ainda usa Node 20, uma linha
-[fora de suporte](https://nodejs.org/en/about/previous-releases); esta mudança
-não atualiza o runtime de produção. Versões recentes e lockfile não garantem
-ausência de vulnerabilidades: revise a árvore instalada com `npm audit`.
+Use uma versão corrigida do Node 22 LTS, a mesma linha usada pelo Dockerfile.
+Versões recentes e lockfile não garantem ausência de vulnerabilidades: revise a
+árvore instalada com `pnpm audit`.
 
 O override `qs: 6.16.0` corrige os avisos de segurança dessa dependência compartilhada
 por Express e Superagent (usado pelo Supertest). O Express 4.22.1 ainda restringe
@@ -46,15 +45,15 @@ Foi mantida a resolução suportada pelo consumidor, sem forçar uma troca major
 
 ## Instalação e comandos
 
-Execute a partir de `backend/`. Instale as dependências com `npm ci`.
+Execute a partir de `backend/`. Instale as dependências com `pnpm install --frozen-lockfile`.
 
 | Comando | Finalidade |
 | --- | --- |
-| `npm test` | Executar os testes uma vez. |
-| `npm run test:watch` | Observar alterações com o modo watch do Jest. |
-| `npm run test:coverage` | Executar e gerar cobertura V8 em `coverage/`. |
-| `npm run test:ci` | Executar em modo CI, sequencialmente, com cobertura. |
-| `npm run test:typecheck` | Conferir tipos de fontes e testes, sem executá-los nem emitir arquivos. |
+| `pnpm test` | Executar os testes uma vez. |
+| `pnpm test:watch` | Observar alterações com o modo watch do Jest. |
+| `pnpm test:coverage` | Executar e gerar cobertura V8 em `coverage/`. |
+| `pnpm test:ci` | Executar em modo CI, sequencialmente, com cobertura. |
+| `pnpm test:typecheck` | Conferir tipos de fontes e testes, sem executá-los nem emitir arquivos. |
 
 Esta entrega configura as ferramentas e os helpers, sem adicionar ou executar
 casos de teste. Enquanto não houver testes, Jest encerra com código 1; não há
@@ -114,10 +113,3 @@ Esses testes exercitam a aplicação HTTP com consultas simuladas. Eles não val
 SQL, transações ou o comportamento do MySQL. Integração com banco real exige
 configuração separada e banco descartável. O mock não é uma barreira geral de
 rede: não remova o mock de conexão nem importe o driver diretamente nessa suíte.
-
-## Pendências anteriores
-
-A checagem completa de tipos ainda expõe problemas existentes em `src/`: `zod`
-não está declarado, consumidores acessam nomes incompatíveis com o objeto `env`
-e há acessos externos a `Product.price`/`Product.category`, que são privados.
-Esses problemas não foram suprimidos nem corrigidos nesta configuração.

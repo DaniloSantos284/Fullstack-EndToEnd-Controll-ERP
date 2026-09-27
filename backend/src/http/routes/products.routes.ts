@@ -19,30 +19,30 @@ import { AddStockEntryController } from "../controllers/AddStockEntryController"
 import { AddStockExitController } from "../controllers/AddStockExitController";
 import { ListProductMovementsController } from "../controllers/ListProductMovementsController";
 
-const router = Router();
+const router: Router = Router();
 
 // --- Repositórios ---
 const stockMovementRepository =
   new MySqlStockMovementRepository();
 
 const productRepository =
-  new MySqlProductRepository(stockMovementRepository);
+  new MySqlProductRepository();
 
 // --- Use cases ---
 const listProductsUseCase =
   new ListProductsUseCase(productRepository);
 
 const getProductDetailsUseCase =
-  new GetProductDetailsUseCase(productRepository);
+  new GetProductDetailsUseCase(productRepository, stockMovementRepository);
 
 const createProductUseCase = 
   new CreateProductUseCase(productRepository);
 
 const addStockEntryUseCase = 
-  new AddStockEntryUseCase(productRepository, stockMovementRepository);
+  new AddStockEntryUseCase(stockMovementRepository);
 
 const addStockExitUseCase = 
-  new AddStockExitUseCase(productRepository, stockMovementRepository);
+  new AddStockExitUseCase(stockMovementRepository);
 
 const listProductMovementsUseCase = 
   new ListProductMovementsUseCase(productRepository, stockMovementRepository);

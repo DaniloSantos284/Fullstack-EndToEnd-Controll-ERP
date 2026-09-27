@@ -1,4 +1,5 @@
 import { ProductRepository } from "../../domain/repositories/ProductRepository";
+import { StockMovementRepository } from "../../domain/repositories/StockMovementRepository";
 import { StockMovementType } from "../../domain/enums/StockMovementType";
 import { ProductCategory } from "../../domain/enums/ProductCategory";
 import { AppError } from "./errors/AppError";
@@ -23,7 +24,8 @@ type GetProductDetailsOutput = {
 
 export class GetProductDetailsUseCase {
   constructor(
-    private productRepository: ProductRepository
+    private productRepository: ProductRepository,
+    private stockMovementRepository: StockMovementRepository
   ) {}
 
   async execute(productId: string): Promise<GetProductDetailsOutput> {
@@ -33,6 +35,8 @@ export class GetProductDetailsUseCase {
       throw new AppError("Product not found", 404);
     }
 
+    const movements = await this.stockMovementRepository.findByProductId(product.id);
+
     return {
       id: product.id,
       name: product.name,
@@ -41,7 +45,7 @@ export class GetProductDetailsUseCase {
       imageUrl: product.imageUrl,
       barCode: product.barCode,
       quantity: product.quantity,
-      movements: product.movements.map(movement => ({
+      movements: movements.map(movement => ({
         id: movement.id,
         type: movement.type,
         quantity: movement.quantity,

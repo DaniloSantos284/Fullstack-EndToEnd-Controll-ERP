@@ -31,7 +31,7 @@ API REST para controle de produtos e movimentações de estoque, escrita em **No
   - Script de criação de tabelas: `db/init.sql`
   - Tabelas: `products` e `stock_movements`
 - **Docker Compose** na raiz (`docker-compose.yml`)
-  - Serviço `db` (MySQL 8.0)
+  - Serviço `db` (MySQL 9.7 LTS / `mysql:9.7`)
   - Serviço `api` (build do diretório `backend/`)
   - Volume para dados do banco e pasta `uploads` do backend
 
@@ -180,20 +180,25 @@ No código de domínio, os tipos de movimento são representados por `StockMovem
 Pré-requisitos:
 
 - Docker
-- Docker Compose
+- Docker com o plugin Compose (`docker compose`)
 
 Passos:
 
-1. Garanta que o arquivo `.env` na raiz esteja configurado (os valores padrão já funcionam para desenvolvimento local).
+1. O Compose possui valores padrão para desenvolvimento e pode iniciar sem `.env`. Para personalizá-los, opcionalmente copie o template e edite o arquivo criado:
+
+```bash
+cp .env.example .env
+```
+
 2. Na raiz do projeto, execute:
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 3. A API ficará disponível em:
 
-- `http://localhost:*****/api` (usando os valores padrão do `.env`)
+- `http://localhost:<porta-padrão-ou-configurada>/api`
 
 4. O MySQL ficará disponível em:
 
@@ -204,7 +209,7 @@ docker-compose up -d --build
 - Banco: `*****`
 
 Os dados do banco são persistidos em um volume Docker (`db_data`).  
-A pasta `backend/uploads` é montada dentro do container e servida estaticamente pela API em `/uploads`.
+A pasta versionada `backend/uploads` é montada dentro do container e servida estaticamente pela API em `/uploads`.
 
 ---
 

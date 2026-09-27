@@ -1,8 +1,8 @@
+import type { RowDataPacket } from "mysql2/promise";
 import { StockMovement } from "../../../../domain/entities/StockMovement";
 import { StockMovementType } from "../../../../domain/enums/StockMovementType";
 
-
-type StockMovementRow = {
+export type StockMovementRow = RowDataPacket & {
   id: string;
   product_id: string;
   type: "in" | "out";
@@ -26,13 +26,19 @@ export class StockMovementMapper {
   }
 
 
-  static toPersistence(movement: StockMovement) {
+  static toPersistence(movement: StockMovement): {
+    id: string;
+    product_id: string;
+    type: "in" | "out";
+    quantity: number;
+    created_at: Date;
+  } {
     return {
       id: movement.id,
       product_id: movement.productId,
       type: movement.isEntry() ? "in" : "out",
       quantity: movement.quantity,
-      created_at: movement.createdAt
+      created_at: movement.createdAt,
     }
   }
 }

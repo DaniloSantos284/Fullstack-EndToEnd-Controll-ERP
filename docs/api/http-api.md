@@ -2,7 +2,7 @@
 
 Esta é a descrição do comportamento implementado no backend em `backend/src`. As rotas da aplicação são montadas sob `/api`; portanto, a base é `http://<host>:<porta>/api`.
 
-> **Disponibilidade atual:** há inconsistências de inicialização no código que impedem considerar a API executável como está: `src/config/env.ts` importa `zod`, que não está listado em `package.json`; `src/infra/db/mysql/connection.ts` lê `env.dbHost`, `env.dbUser` e `env.dbName`, embora o schema exporte `DB_HOST`, `DB_USER` e `DB_DATABASE`; e o schema define `env.PORT`, mas `src/server.ts` acessa incorretamente `env.port`. Os contratos abaixo descrevem os handlers implementados, caso a aplicação seja iniciada com essas dependências/configurações resolvidas; não são garantia de que uma instância sem essas correções esteja respondendo.
+> **Disponibilidade atual:** a inicialização valida as variáveis de ambiente com Zod antes de abrir a porta configurada. Os contratos abaixo descrevem os handlers implementados; a disponibilidade de uma instância ainda depende de uma configuração de banco válida.
 
 ## Convenções do contrato
 
@@ -277,7 +277,7 @@ Consequentemente, as rotas implementadas não exigem `Authorization` e o servido
 
 ## Compatibilidade e diferenças de contrato
 
-- O backend usa Express 4, Node.js/TypeScript e MySQL. O Dockerfile usa `node:20-slim`; o schema de ambiente define `PORT` com padrão `3333`, mas `server.ts` acessa incorretamente `env.port`, não `env.PORT`. Mesmo corrigido esse acesso, o `docker-compose.yml` publica a porta de contêiner `4000`, então o processo precisaria efetivamente ouvir em `4000` (por exemplo, com `PORT=4000`) para o mapeamento atender.
+- O backend usa Express 4, Node.js/TypeScript e MySQL. O Dockerfile é multi-stage com `node:22-slim`, Corepack e pnpm; o runtime instala apenas dependências de produção e usa o usuário `node`. O Compose tem valores padrão de desenvolvimento e aceita personalização opcional ao copiar `.env.example` para `.env`.
 - Clientes devem tratar IDs como strings opacas, datas como strings ISO e enums exatamente em maiúsculas. Não há negociação de versão, prefixo de versão (`/v1`) ou contrato OpenAPI implementado.
 - A forma da resposta varia por endpoint: a criação não retorna `quantity`; a listagem não retorna `barCode` nem `movements`; detalhes omitem `productId` dentro de movimentos; e a listagem de movimentos o inclui.
 - O tipo de `price` na criação é número porque vem do JSON da requisição. Para dados lidos do MySQL, `price` é uma coluna `DECIMAL(10,2)` e o repositório não faz conversão explícita. Clientes não devem depender sem teste de que leituras retornem `price` como número; a configuração padrão usual do `mysql2` devolve `DECIMAL` como string.

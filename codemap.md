@@ -13,7 +13,7 @@ Este mapa é o ponto de orientação do repositório. Para detalhes de uma área
 | [`backend/src/server.ts`](backend/src/server.ts) | Entrada do processo Node: obtém a aplicação e a configuração, então tenta iniciar a escuta HTTP. |
 | [`backend/src/app.ts`](backend/src/app.ts) | Cria o Express, registra JSON, arquivos estáticos em `/uploads`, o router `/api` e o middleware de erro. |
 | [`backend/src/http/routes/products.routes.ts`](backend/src/http/routes/products.routes.ts) | Composition root manual: instancia repositórios MySQL, casos de uso e controllers; registra os endpoints de produtos e movimentos. |
-| [`docker-compose.yml`](docker-compose.yml) | Declara os serviços `db` (MySQL 8) e `api`, volumes, portas, rede e dependência do healthcheck do banco. |
+| [`docker-compose.yml`](docker-compose.yml) | Declara os serviços `db` (MySQL 9.7 LTS / `mysql:9.7`) e `api`, volumes, portas, rede e dependência do healthcheck do banco. |
 | [`backend/Dockerfile`](backend/Dockerfile) | Instala dependências, compila TypeScript e inicia `dist/server.js` na imagem da API. |
 | [`db/init.sql`](db/init.sql) | Inicializa as tabelas `products` e `stock_movements` quando o volume MySQL é criado. |
 

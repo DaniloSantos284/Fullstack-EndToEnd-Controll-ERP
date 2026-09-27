@@ -86,7 +86,6 @@ O carregamento do agregado usa a ordem decrescente retornada pela consulta e rea
 - Há incompatibilidade entre os nomes exportados pelo módulo de ambiente e os nomes lidos na criação do pool: o pool acessa `env.dbHost`, `env.dbUser`, `env.dbPassword` e `env.dbName`, enquanto o schema de ambiente define apenas chaves em maiúsculas. Além disso, `PORT_DB` e `DB_CONNECTION_LIMIT` não são passados ao pool; o limite é fixado em `10`.
 - Não há configuração de porta, TLS/SSL, timezone ou charset no objeto de opções do pool.
 - O `docker-compose.yml` monta `db/init.sql` como script de inicialização e cria o banco com o valor de `MYSQL_DATABASE`/`DB_DATABASE`. Como o SQL fixa `USE stockdb`, essas configurações precisam coincidir para o script operar sobre o banco esperado.
-- `env.ts` importa `zod`, mas `backend/package.json` não o declara em `dependencies` nem em `devDependencies`.
 - As operações de repositório observadas usam `db.execute`. Não há chamadas a `getConnection`, `beginTransaction`, `commit` ou `rollback`; transações de aplicação não estão implementadas nesse código.
 
 ## Limitações de integridade e migração

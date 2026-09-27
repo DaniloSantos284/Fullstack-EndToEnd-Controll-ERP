@@ -1,9 +1,9 @@
-import express from "express";
+import express, { type Express } from "express";
 import path from "path";
 import productsRoutes from "./http/routes/products.routes";
 import { errorHandler } from "./http/middlewares/errorHandler";
 
-const app = express();
+const app: Express = express();
 
 // Middleware para JSON
 app.use(express.json());
