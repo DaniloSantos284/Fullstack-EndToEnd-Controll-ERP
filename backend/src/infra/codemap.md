@@ -1,19 +1,9 @@
-# `backend/src/infra/`
+# backend/src/infra/
 
-## Responsabilidade
+Os adaptadores de infraestrutura são MySQL em [db/mysql/](db/mysql/codemap.md) e verificação JWT em [security/](security/codemap.md). O adaptador MySQL traduz as portas de repositório do domínio para consultas `mysql2/promise` e mantém o pool compartilhado em `db/mysql/connection.ts`.
 
-Adaptadores de infraestrutura. Atualmente o único adaptador é a persistência MySQL em [`backend/src/infra/db/mysql/`](db/mysql/): ele implementa os contratos do domínio usando `mysql2/promise`.
+`MySqlProductRepository` grava e lê produtos com o saldo materializado da coluna `products.quantity`. `MySqlStockMovementRepository` aplica movimentos em uma transação com lock do produto e também consulta o histórico. `StockMovementMapper` traduz `ENTRY`/`EXIT` para `in`/`out`. Casos de uso dependem das interfaces do domínio; `http/routes/products.routes.ts` instancia os adaptadores concretos.
 
-## Estrutura e integração
+O DDL inicial e a migração de dados existentes ficam em `../../../db/`, fora de `backend/`. Não há ORM; as queries usam parâmetros posicionais. Erros de driver não são convertidos nos repositórios e chegam ao tratamento HTTP.
 
-- [`db/mysql/connection.ts`](db/mysql/connection.ts) exporta o pool global `db`.
-- [`db/mysql/repositories/`](db/mysql/repositories/) implementa `ProductRepository` e `StockMovementRepository`, definidos respectivamente em [`backend/src/domain/repositories/ProductRepository.ts`](../domain/repositories/ProductRepository.ts) e [`backend/src/domain/repositories/StockMovementRepository.ts`](../domain/repositories/StockMovementRepository.ts).
-- [`db/mysql/mappers/`](db/mysql/mappers/) traduz a representação da tabela `stock_movements` para a entidade de domínio.
-
-As instâncias concretas são compostas em [`backend/src/http/routes/products.routes.ts`](../http/routes/products.routes.ts): `MySqlStockMovementRepository` é criado primeiro e injetado em `MySqlProductRepository`, pois a leitura de um produto hidrata seus movimentos.
-
-## Fluxo de persistência
-
-Casos de uso dependem somente das interfaces de repositório. A implementação MySQL executa SQL parametrizado por `db.execute`, cria/hidrata entidades de domínio e devolve agregados `Product` ou movimentos `StockMovement`. A quantidade de um produto é calculada a partir dos movimentos, não obtida como fonte de verdade da coluna `products.quantity`.
-
-Os detalhes do contrato do pool, SQL, hidratação e limitações estão nos codemaps de [`db/`](db/) e [`db/mysql/`](db/mysql/).
+`JwksAccessTokenVerifier` implementa a porta `AccessTokenVerifier` da aplicação com `jose`, usando JWKS remoto configurado por ambiente. O endpoint HTTP decide qual escopo exigir pelo método original encaminhado pelo Nginx.

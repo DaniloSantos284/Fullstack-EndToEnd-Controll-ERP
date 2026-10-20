@@ -1,31 +1,13 @@
-# `backend/src/infra/db/mysql/`
+# backend/src/infra/db/mysql/
 
-## Responsabilidade
+## Pool
 
-Adaptador MySQL baseado em `mysql2/promise`. Contém o pool exportado por [`connection.ts`](connection.ts), o mapper de movimentos em [`mappers/`](mappers/) e implementações de portas do domínio em [`repositories/`](repositories/).
+`connection.ts` cria um pool `mysql2/promise` com host, porta, usuário, senha, banco e limite de conexões de `config/env.ts`. Usa `waitForConnections: true`, `queueLimit: 0`, `charset: utf8mb4`, `timezone: Z` e `decimalNumbers: false`. O `server.ts` chama `db.end()` no encerramento gracioso.
 
-## Contrato do pool
+## Dados e consultas
 
-`connection.ts` cria e exporta um único `Pool` como `db` no carregamento do módulo. Os consumidores usam diretamente `await db.execute(sql, params)`; não recebem uma conexão individual, não chamam `getConnection()` e não gerenciam `release()`.
+`MySqlProductRepository` lê a coluna `products.quantity` como saldo atual. `price` é mantido em centavos na entidade; a gravação produz texto decimal com duas casas, e a leitura converte o `DECIMAL` retornado pelo driver para número antes da validação/construção de `Product`. Listagem de produtos usa `ORDER BY id ASC LIMIT ? OFFSET ?` e busca um registro extra para calcular `hasNext`.
 
-Configuração efetivamente passada a `mysql.createPool`:
+`MySqlStockMovementRepository.applyMovement` obtém conexão, inicia transação, bloqueia a linha do produto com `FOR UPDATE`, rejeita saída sem saldo ou entrada acima do limite de `INT`, atualiza o saldo e insere o movimento. Produto ausente, saldo insuficiente e limite excedido são estados retornados à aplicação. Falhas SQL provocam rollback e seguem como exceção. A leitura de histórico usa `ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?` e também busca um registro extra.
 
-- `host`, `user`, `password` e `database` são lidos como `env.dbHost`, `env.dbUser`, `env.dbPassword` e `env.dbName`.
-- `waitForConnections: true`, `connectionLimit: 10` e `queueLimit: 0` (fila sem limite) são fixos.
-- Não há `port`, apesar de [`backend/src/config/env.ts`](../../../config/env.ts) validar `PORT_DB`; também ignora `DB_CONNECTION_LIMIT` e fixa o limite em 10.
-- O `env` exportado usa nomes em maiúsculas (`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE`). Portanto, as quatro leituras em minúsculas não correspondem ao tipo nem aos valores validados. A inicialização de `env` ainda falha cedo se as variáveis obrigatórias não existirem.
-
-O pool não abre uma conexão por repositório nem possui encerramento/health-check explícitos. Erros de conexão ou execução surgem no `execute` que os provoca, salvo nos métodos de produto que os encapsulam.
-
-## Convenções de query e dados
-
-- Queries de escrita usam `INSERT` com `?` e arrays de parâmetros. Não há `UPDATE`, `DELETE`, transações ou bloqueios.
-- As leituras usam `SELECT *`, ficando acopladas aos nomes e tipos retornados pelo schema MySQL. Os repositórios tipam as linhas como `any[]`.
-- `products` é lida/gravada com `id`, `name`, `quantity`, `price`, `category`, `image_url` e `bar_code`; `stock_movements` com `id`, `product_id`, `type`, `quantity` e `created_at`.
-- A quantidade do agregado `Product` é derivada dos movimentos em [`backend/src/domain/entities/Product.ts`](../../../domain/entities/Product.ts). A coluna `products.quantity` é incluída no `INSERT`, mas ignorada na hidratação e nunca atualizada quando um movimento é inserido; ela não deve ser tratada como saldo confiável pelo código atual.
-
-## Fluxos e limitações
-
-`MySqlProductRepository.findById` realiza uma consulta do produto e, quando há resultado, consulta seus movimentos para reconstruir o agregado. `findAll` realiza uma consulta de produtos e depois uma consulta de movimentos por produto, em sequência: são **1 + N** queries (N+1), sem paginação e sem paralelismo. O detalhe está em [`repositories/`](repositories/).
-
-Os movimentos são carregados por `created_at DESC`, mas a hidratação chama `Product.addMovement`, que valida saídas contra o saldo parcial. Como o agregado deveria ser reconstruído cronologicamente, uma saída recente pode ser aplicada antes das entradas anteriores e falhar com `Insufficient stock`; esse erro é posteriormente mascarado pelo repositório de produtos. Consulte [`mappers/`](mappers/) e [`repositories/`](repositories/) para as regras exatas.
+O [mapper](mappers/codemap.md) converte os enums do histórico. Os contratos e SQL detalhados estão em [repositories/](repositories/codemap.md). As leituras de produto não carregam movimentos; detalhes e histórico fazem uma consulta separada, sem N+1 na lista de produtos.
