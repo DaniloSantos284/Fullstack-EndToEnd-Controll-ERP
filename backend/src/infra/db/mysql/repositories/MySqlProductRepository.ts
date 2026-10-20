@@ -2,6 +2,8 @@ import type { RowDataPacket } from "mysql2/promise";
 import { db } from "../connection";
 import { Product } from "../../../../domain/entities/Product";
 import { ProductRepository } from "../../../../domain/repositories/ProductRepository";
+import { Pagination } from "../../../../domain/repositories/Pagination";
+import { DomainError } from "../../../../domain/errors/DomainError";
 
 type ProductRow = RowDataPacket & {
   id: string;
@@ -31,7 +33,7 @@ export class MySqlProductRepository implements ProductRepository {
         product.id,
         product.name,
         product.quantity,
-        product.price,
+        `${Math.floor(product.priceCents / 100)}.${String(product.priceCents % 100).padStart(2, "0")}`,
         product.category,
         product.imageUrl ?? null,
         product.barCode ?? null,
@@ -58,25 +60,33 @@ export class MySqlProductRepository implements ProductRepository {
     return this.mapRowToProduct(row);
   }
 
-  async findAll(): Promise<Product[]> {
+  async findPage({ page, limit }: Pagination): Promise<Product[]> {
     const [rows] = await db.execute<ProductRow[]>(`
       SELECT id, name, quantity, price, category, image_url, bar_code
       FROM products
       ORDER BY id ASC
-    `);
+      LIMIT ? OFFSET ?
+    `, [limit + 1, (page - 1) * limit]);
 
     return rows.map((row) => this.mapRowToProduct(row));
   }
 
   private mapRowToProduct(row: ProductRow): Product {
-    return new Product({
-      id: row.id,
-      name: row.name,
-      quantity: row.quantity,
-      price: Number(row.price),
-      category: row.category,
-      ...(row.image_url === null ? {} : { imageUrl: row.image_url }),
-      ...(row.bar_code === null ? {} : { barCode: row.bar_code }),
-    });
+    try {
+      return new Product({
+        id: row.id,
+        name: row.name,
+        quantity: row.quantity,
+        price: Number(row.price),
+        category: row.category,
+        ...(row.image_url === null ? {} : { imageUrl: row.image_url }),
+        ...(row.bar_code === null ? {} : { barCode: row.bar_code }),
+      });
+    } catch (error) {
+      if (error instanceof DomainError) {
+        throw new Error("Invalid persisted product");
+      }
+      throw error;
+    }
   }
 }

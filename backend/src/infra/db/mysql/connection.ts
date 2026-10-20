@@ -10,7 +10,7 @@ export const db: Pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: env.dbConnectionLimit,
   queueLimit: 0,
-  decimalNumbers: true,
+  decimalNumbers: false,
   charset: "utf8mb4",
   timezone: "Z",
 });

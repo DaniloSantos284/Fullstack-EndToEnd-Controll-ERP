@@ -12,3 +12,7 @@ Object.assign(process.env, {
   DB_DATABASE: 'stock_test',
   DB_CONNECTION_LIMIT: '1',
 });
+
+delete process.env.JWT_ISSUER;
+delete process.env.JWT_AUDIENCE;
+delete process.env.JWT_JWKS_URL;

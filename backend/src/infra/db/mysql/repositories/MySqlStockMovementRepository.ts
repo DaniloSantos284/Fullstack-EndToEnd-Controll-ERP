@@ -5,6 +5,7 @@ import {
   StockMovementRepository,
 } from "../../../../domain/repositories/StockMovementRepository";
 import { StockMovement } from "../../../../domain/entities/StockMovement";
+import { Pagination } from "../../../../domain/repositories/Pagination";
 import {
   StockMovementMapper,
   StockMovementRow,
@@ -13,6 +14,8 @@ import {
 type ProductQuantityRow = RowDataPacket & {
   quantity: number;
 };
+
+const MAX_SIGNED_INT = 2_147_483_647;
 
 export class MySqlStockMovementRepository
   implements StockMovementRepository
@@ -46,6 +49,10 @@ export class MySqlStockMovementRepository
 
       if (movement.isExit() && product.quantity < movement.quantity) {
         return "insufficient_stock";
+      }
+
+      if (movement.isEntry() && product.quantity > MAX_SIGNED_INT - movement.quantity) {
+        return "stock_limit_exceeded";
       }
 
       const quantityDelta = movement.isEntry()
@@ -93,15 +100,16 @@ export class MySqlStockMovementRepository
     }
   }
 
-  async findByProductId(productId: string): Promise<StockMovement[]> {
+  async findPageByProductId(productId: string, { page, limit }: Pagination): Promise<StockMovement[]> {
     const [rows] = await db.execute<StockMovementRow[]>(
       `
       SELECT id, product_id, type, quantity, created_at
       FROM stock_movements
       WHERE product_id = ?
       ORDER BY created_at DESC, id DESC
+      LIMIT ? OFFSET ?
       `,
-      [productId]
+      [productId, limit + 1, (page - 1) * limit]
     );
 
     return rows.map(StockMovementMapper.toDomain);
