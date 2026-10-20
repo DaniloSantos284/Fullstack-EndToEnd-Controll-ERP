@@ -1,23 +1,17 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { GetProductDetailsUseCase } from "../../application/use-cases/GetProductDetailsUseCase";
+import {
+  paginationFromRequest,
+  parseHttpInput,
+  productIdParamsSchema,
+} from "../schemas/products.schemas";
 
 export class GetProductDetailsController {
-  constructor(
-    private getProductDetailsUseCase: GetProductDetailsUseCase
-  ) {}
+  constructor(private readonly useCase: GetProductDetailsUseCase) {}
 
   async handle(req: Request, res: Response): Promise<Response> {
-    const { id } = req.params;
-
-    if (typeof id !== "string" || id.trim().length === 0) {
-      return res.status(400).json({
-        message: "Id do produto inválido",
-      });
-    }
-
-    const result =
-      await this.getProductDetailsUseCase.execute(id);
-
+    const { id } = parseHttpInput(productIdParamsSchema, req.params);
+    const result = await this.useCase.execute(id, paginationFromRequest(req));
     return res.status(200).json(result);
   }
 }
