@@ -1,0 +1,68 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enable pnpm 12.14.0
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.14.0 --activate
+      - name: Install
+        run: pnpm --dir backend install --frozen-lockfile
+      - name: Build and typecheck
+        run: |
+          pnpm --dir backend build
+          pnpm --dir backend test:typecheck
+      - name: Test
+        run: pnpm --dir backend test:ci
+      - name: Check Nginx gateway configuration
+        shell: bash
+        run: |
+          cert_dir="$(mktemp -d)"
+          trap 'rm -rf "$cert_dir"' EXIT
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt" \
+            -days 1 -subj '/CN=example.test' >/dev/null 2>&1
+          docker run --rm --network none --add-host api:127.0.0.1 \
+            -e PUBLIC_HOSTNAME=example.test \
+            -e FRONTEND_ORIGIN=https://app.example.test \
+            -v "$PWD/deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            -v "$cert_dir:/etc/nginx/tls:ro" \
+            nginx:stable-alpine nginx -t
+      - name: Start disposable MySQL and API
+        env:
+          DB_ROOT_PASSWORD: ci-root-only
+          DB_PASSWORD: ci-app-only
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --build --wait
+      - name: Test real MySQL transactions
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          PORT_DB: '3307'
+          DB_USER: stock_user
+          DB_PASSWORD: ci-app-only
+          DB_DATABASE: stockdb
+        run: pnpm --dir backend test:integration
+      - name: Stop disposable services
+        if: always()
+        env:
+          DB_ROOT_PASSWORD: ci-root-only
+          DB_PASSWORD: ci-app-only
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml down --volumes
+      - name: Check whitespace
+        shell: bash
+        run: |
+          base=$(git merge-base origin/main HEAD)
+          git diff --check "$base"..HEAD

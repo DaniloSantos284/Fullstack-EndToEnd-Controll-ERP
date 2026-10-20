@@ -1,0 +1,26 @@
+# Public deployment requires a real OIDC issuer, JWKS, audience and TLS certificate.
+services:
+  api:
+    environment:
+      JWT_ISSUER: ${JWT_ISSUER:?Set the OIDC issuer}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:?Set the API audience}
+      JWT_JWKS_URL: ${JWT_JWKS_URL:?Set the HTTPS JWKS URL}
+      TRUST_PROXY_HOPS: 1
+
+  gateway:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?Set the public DNS name}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-}
+    volumes:
+      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_PATH:?Set the TLS certificate path}:/etc/nginx/tls/server.crt:ro
+      - ${TLS_KEY_PATH:?Set the TLS private key path}:/etc/nginx/tls/server.key:ro
+    ports:
+      - "${GATEWAY_PORT:-443}:443"
+    networks:
+      - internal

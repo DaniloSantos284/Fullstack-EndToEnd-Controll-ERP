@@ -22,8 +22,6 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /usr/src/app/dist ./dist
 
-RUN mkdir -p /usr/src/app/uploads && chown node:node /usr/src/app/uploads
-
 USER node
 
 EXPOSE 4000
