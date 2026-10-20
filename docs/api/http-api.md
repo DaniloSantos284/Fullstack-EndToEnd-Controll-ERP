@@ -1,285 +1,64 @@
-# API HTTP atual
+# API HTTP
 
-Esta é a descrição do comportamento implementado no backend em `backend/src`. As rotas da aplicação são montadas sob `/api`; portanto, a base é `http://<host>:<porta>/api`.
+Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gateway podem ter corpo diferente. Não há `/uploads`. Na implantação pública, o frontend envia `Authorization: Bearer <JWT>` ao Nginx; seu `auth_request` consulta um verificador interno antes de encaminhar a chamada à API. Se o frontend web estiver em outra origem, configure `FRONTEND_ORIGIN` no gateway para permitir o preflight CORS sem JWT.
 
-> **Disponibilidade atual:** a inicialização valida as variáveis de ambiente com Zod antes de abrir a porta configurada. Os contratos abaixo descrevem os handlers implementados; a disponibilidade de uma instância ainda depende de uma configuração de banco válida.
+## Convenções
 
-## Convenções do contrato
+- IDs de rota: UUID. Datas de movimentos: ISO 8601 em UTC.
+- `page`: inteiro decimal de 1 a 1.000.000; `limit`: inteiro decimal de 1 a 100. Padrões: `page=1`, `limit=20`. Parâmetros de query extras recebem `400`.
+- Listas retornam `{ "data": [...], "pagination": { "page": 1, "limit": 20, "hasNext": false } }`. A ordem é estável: produtos por `id ASC`; movimentos por `createdAt DESC, id DESC`. `hasNext` vem de uma linha extra buscada pelo repositório.
+- `price` é número JSON não negativo, com no máximo duas casas decimais e teto de `99999999.99`. O domínio conserva centavos inteiros; MySQL usa `DECIMAL(10,2)`. A moeda ainda não foi definida como campo do contrato.
+- Quantidade de movimento é inteiro de 1 a 2.147.483.647. Saldo não pode ficar negativo nem exceder o limite de `INT`.
+- O servidor gera `X-Request-Id` para cada requisição; não aceita um ID enviado pelo cliente como identidade confiável.
 
-- Os identificadores de produto e de movimentação são UUIDs gerados pelo servidor. Nas rotas que recebem `:id`, o único critério HTTP implementado é ser uma string não vazia; o formato UUID não é validado.
-- Um segmento `:id` ausente não casa a rota parametrizada. Se não houver outra rota para aquele método e path, o Express aplica seu `404` padrão; por exemplo, `GET /api/products` casa a rota de listagem, não a de detalhes. O `400` local de `id` ocorre somente quando o segmento foi recebido e fica vazio após `trim`, como em um espaço codificado.
-- O corpo das rotas de escrita é JSON. Campos desconhecidos são ignorados pelos controllers.
-- `ProductCategory` aceita somente: `FOOD`, `ELECTRONICS`, `CLOTHING`, `CLEANING`, `OFFICE` e `OTHER`.
-- A API expõe os tipos de movimento como `ENTRY` e `EXIT`. A persistência MySQL os converte internamente para `in` e `out`.
-- Datas `Date` serializadas por `res.json()` são strings ISO 8601, por exemplo `"2026-09-25T12:34:56.000Z"`.
-- Propriedades com valor `undefined` não aparecem no JSON. Assim, `imageUrl` e `barCode` podem estar ausentes, apesar de aparecerem como opcionais nos exemplos de resposta.
-- A criação preserva o `price` `number` recebido no JSON. Já leituras MySQL de `products.price` (`DECIMAL(10,2)`) tendem a chegar como string: o pool não habilita `decimalNumbers: true` e o repositório não faz conversão. Clientes não devem supor `price` numérico em respostas de leitura.
+## Produtos
 
-## Endpoints
+`GET /api/products?page=1&limit=20` retorna `200` com `data` contendo `id`, `name`, `price`, `category`, `imageUrl` quando presente e `quantity`. `barCode` não faz parte da lista.
 
-### `GET /api/products`
-
-Lista os produtos persistidos. Não há paginação, filtros, ordenação configurável ou uso de query string no handler. A ordem é a devolvida pelo banco, pois a consulta não contém `ORDER BY`.
-
-**Corpo:** não utiliza corpo.
-
-**Resposta `200 OK`:** array, inclusive vazio (`[]`).
+`POST /api/products` recebe exatamente os campos abaixo e retorna `201` com `id`, `name`, `price`, `category` e os opcionais enviados. O saldo inicial é zero.
 
 ```json
-[
-  {
-    "id": "9ecf4f56-4b6e-4e49-9972-b47f844b2d9b",
-    "name": "Camiseta",
-    "price": "59.90",
-    "category": "CLOTHING",
-    "imageUrl": "http://localhost:4000/uploads/camiseta.png",
-    "quantity": 10
-  }
-]
+{"name":"Caderno","price":12.50,"category":"OFFICE","imageUrl":"https://example.test/item.png","barCode":"123"}
 ```
 
-Cada item contém `id`, `name`, `price`, `category`, `quantity` e, quando definido, `imageUrl`. Nesta leitura, `price` tende a ser a string retornada pelo MySQL para `DECIMAL(10,2)`, pois não há conversão no repositório. A quantidade é recalculada a partir das movimentações carregadas: entradas somam e saídas subtraem; o campo `products.quantity` armazenado não é usado para montar a resposta.
+`name` tem 1 a 255 caracteres após remoção de espaços nas bordas; `imageUrl` é string de até 500 caracteres e `barCode` de até 100. Strings opcionais vazias são preservadas; valores extras ou tipos incorretos são rejeitados. Categorias: `FOOD`, `ELECTRONICS`, `CLOTHING`, `CLEANING`, `OFFICE`, `OTHER`.
 
-**Outros status observáveis:** falhas no repositório de produtos, incluindo carregamento de movimentos durante a listagem, são convertidas para `400` com `{"message":"Erro ao buscar produtos no banco"}`. Erros não classificados pelo middleware retornam `500`.
+`GET /api/products/:id?page=1&limit=20` retorna `200` com os campos do produto, `barCode` quando presente, `quantity`, `movements` e `movementsPagination`. `page` e `limit` paginam apenas `movements`, não o produto. Produto inexistente retorna `404`.
 
-### `POST /api/products`
+## Estoque
 
-Cria um produto. A quantidade inicial é zero; não há campo de quantidade aceito nesta rota.
+`POST /api/products/:id/stock/entry` e `POST /api/products/:id/stock/exit` recebem `{ "quantity": 2 }`, retornam `201` com `{ "ok": true }` e rejeitam campos extras. Produto inexistente retorna `404`; saldo insuficiente ou overflow retorna `409`. Cada comando persiste saldo e movimento na mesma transação.
 
-**Corpo JSON:**
+`GET /api/products/:id/movements?page=1&limit=20` retorna uma lista paginada. Cada movimento contém `id`, `productId`, `type` (`ENTRY` ou `EXIT`), `quantity` e `createdAt`.
 
-```json
-{
-  "name": "Camiseta",
-  "price": 59.9,
-  "category": "CLOTHING",
-  "imageUrl": "http://localhost:4000/uploads/camiseta.png",
-  "barCode": "1234567890"
-}
-```
+## Erros e proteção
 
-| Campo | Obrigatório | Regra aplicada |
-| --- | --- | --- |
-| `name` | Sim | Deve ser `string`; depois, não pode ser vazia ou formada apenas por espaços. O valor não é aparado antes de ser salvo. |
-| `price` | Sim | Deve ser `number` e não pode ser negativo. Zero e valores decimais são aceitos. |
-| `category` | Sim | Deve ser `string` e um dos valores de `ProductCategory`. |
-| `imageUrl` | Não | Só é encaminhado se for `string`; string vazia acaba não sendo persistida nem devolvida. Não há validação de URL, arquivo ou existência no diretório de uploads. |
-| `barCode` | Não | Só é encaminhado se for `string`; string vazia acaba não sendo persistida nem devolvida. Não há regra de unicidade ou de formato. |
+Formato de erro: `{ "code": "VALIDATION_ERROR", "message": "Dados da requisição inválidos.", "requestId": "..." }`. O header `X-Request-Id` tem o mesmo valor. Respostas não incluem stack, SQL, headers sensíveis nem segredos.
 
-**Resposta `201 Created`:**
+| Status | Situação |
+| --- | --- |
+| 400 | Validação, UUID, query ou JSON inválidos. |
+| 404 | Rota ou produto ausente. |
+| 409 | Estoque insuficiente ou limite de saldo. |
+| 413 | JSON maior que `JSON_BODY_LIMIT_KB` (64 KiB por padrão). |
+| 415 | Charset ou codificação do corpo JSON não suportados. |
+| 429 | Limite local de requisições excedido; inclui `Retry-After`. |
+| 503 | Banco reconhecidamente indisponível ou readiness negativa. |
+| 500 | Falha inesperada, com mensagem genérica. |
 
-```json
-{
-  "id": "9ecf4f56-4b6e-4e49-9972-b47f844b2d9b",
-  "name": "Camiseta",
-  "price": 59.9,
-  "category": "CLOTHING",
-  "imageUrl": "http://localhost:4000/uploads/camiseta.png",
-  "barCode": "1234567890"
-}
-```
+Helmet define headers de proteção. O limitador em memória cobre `/api` por endereço IP e só é global para uma instância; o gateway precisa impor limite compartilhado no ambiente público. Por padrão, apenas o endereço do socket é confiável (`TRUST_PROXY_HOPS=0`).
 
-Não retorna `quantity`, `movements`, cabeçalho `Location` ou os timestamps do banco.
-O `price` dessa resposta é o `number` recebido no corpo de criação; a ressalva de
-`DECIMAL` aplica-se às respostas que leem o produto do MySQL.
+## Saúde
 
-**Erros de regra (`400 Bad Request`):**
+- `GET /health/live`: `200 { "status": "ok" }`, independente do banco.
+- `GET /health/ready`: `200 { "status": "ok" }` após `SELECT 1`; `503` no contrato de erro durante indisponibilidade ou shutdown.
 
-- `{"message":"Campo name inválido."}` se `name` não for string;
-- `{"message":"Campo preço inválido."}` se `price` não for number;
-- `{"message":"Campo categoria inválido."}` se `category` não for string;
-- `{"message":"Categoria inválida."}` se a categoria não pertencer ao enum;
-- `{"message":"Nome do produto é obrigatório."}` se o nome for vazio/apenas espaços;
-- `{"message":"Preço inválido"}` se o preço for negativo ou `NaN` no caso de chamada interna;
-- `{"message":"Erro ao salvar no DB"}` para qualquer erro capturado na persistência do produto.
+O gateway deve manter readiness fora de rotas públicas ou protegê-la. A resposta não revela host, credenciais nem erro SQL.
 
-Erro inesperado fora desses casos retorna `500` no formato global.
+## Autenticação do gateway
 
-### `GET /api/products/:id`
+O Nginx é configurado para publicar somente `/api/`. Seu subrequest interno chama `GET /internal/auth/verify` com `Authorization` e `X-Original-Method`; o endpoint responde `204` quando o JWT é válido e tem `inventory:read` para GET/HEAD ou `inventory:write` para POST. Ausência/invalidade do token resulta em `401`, escopo insuficiente em `403` e falta de configuração em `503`. O verificador aceita assinaturas `RS256`/`ES256` via JWKS HTTPS, exige `iss`, `aud`, `sub` e `exp`, e aceita escopos em `scope` ou `permissions`.
 
-Obtém o produto e as suas movimentações. As movimentações vêm da consulta do produto e são ordenadas no banco por `created_at DESC`.
+Esse endpoint não deve ser publicado pelo gateway. O provedor OIDC que emitirá os JWTs ainda não foi escolhido; a implantação pública exige `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_JWKS_URL` válidos.
 
-**Parâmetro:** para alcançar esta rota, o segmento `id` precisa estar presente. Um
-segmento presente que resulte vazio após `trim` recebe `400`; a ausência do segmento
-não aciona este handler.
-
-**Resposta `200 OK`:**
-
-```json
-{
-  "id": "9ecf4f56-4b6e-4e49-9972-b47f844b2d9b",
-  "name": "Camiseta",
-  "price": "59.90",
-  "category": "CLOTHING",
-  "imageUrl": "http://localhost:4000/uploads/camiseta.png",
-  "barCode": "1234567890",
-  "quantity": 5,
-  "movements": [
-    {
-      "id": "dc0615af-68d5-4895-a945-e783a4bc6077",
-      "type": "EXIT",
-      "quantity": 5,
-      "createdAt": "2026-09-25T12:34:56.000Z"
-    }
-  ]
-}
-```
-
-Os itens de `movements` deste endpoint não incluem `productId`. `imageUrl` e `barCode` são omitidos se não tiverem valor. Nesta leitura, `price` tende a ser string pelo retorno padrão do MySQL para a coluna `DECIMAL(10,2)`.
-
-**Erros/status:**
-
-- `400` com `{"message":"Id do produto inválido"}` se o segmento presente ficar vazio após `trim`;
-- `404` com `{"message":"Product not found"}` se não houver produto;
-- `400` com `{"message":"Erro ao procurar pelo id"}` se a consulta SQL de `findById` falhar;
-- `400` com `{"message":"Erro ao buscar esse produto"}` se a hidratação do produto ou o carregamento de seus movimentos falhar. `findById` retorna `mapRowToProduct` sem `await`, portanto essa rejeição não é capturada pelo `catch` de `findById`;
-- `500` para erro não tratado pelo `AppError`.
-
-### `POST /api/products/:id/stock/entry`
-
-Registra uma entrada de estoque para o produto.
-
-**Corpo JSON:**
-
-```json
-{ "quantity": 10 }
-```
-
-`quantity` deve ser `number`, não pode ser `NaN` e deve ser maior que zero. Não há validação de inteiro; valores positivos decimais passam pela camada HTTP, embora a coluna MySQL seja `INT`.
-
-**Resposta `201 Created`:**
-
-```json
-{ "ok": true }
-```
-
-O identificador e a data da movimentação não são retornados. A operação cria uma movimentação `ENTRY` com UUID e data atuais.
-
-**Erros/status:**
-
-- `400` `{"message":"Parâmetro id inválido."}` para segmento `id` presente, mas vazio após `trim`;
-- `400` `{"message":"Campo quantity inválido. Deve ser número > 0."}` para corpo inválido, zero ou negativo;
-- `404` `{"message":"Produto não encontrado"}` se o produto não existir;
-- `400` `{"message":"Erro ao procurar pelo id"}` se a consulta SQL de `findById` falhar;
-- `400` `{"message":"Erro ao buscar esse produto"}` se a hidratação do produto falhar;
-- `500` se a gravação da movimentação, ou outro erro não convertido em `AppError`, falhar.
-
-### `POST /api/products/:id/stock/exit`
-
-Registra uma saída de estoque para o produto.
-
-**Corpo JSON:**
-
-```json
-{ "quantity": 5 }
-```
-
-As exigências de `quantity` são as mesmas da entrada: número positivo, sem exigência de inteiro. Antes de persistir, o produto é remontado com seu histórico e a saída só é aceita se a quantidade atual desse agregado carregado for suficiente. Essa proteção vale para a operação isolada; como não há transação ou bloqueio, saídas concorrentes podem observar o mesmo saldo e, em conjunto, excedê-lo.
-
-**Resposta `201 Created`:**
-
-```json
-{ "ok": true }
-```
-
-**Erros/status:**
-
-- `400` `{"message":"Parâmetro id inválido."}` para segmento `id` presente, mas vazio após `trim`;
-- `400` `{"message":"Campo quantity inválido. Deve ser número maior que 0."}` para corpo inválido, zero ou negativo;
-- `400` `{"message":"Insufficient stock"}` quando não há estoque calculado suficiente;
-- `404` `{"message":"Produto não encontrado"}` se o produto não existir;
-- `400` `{"message":"Erro ao procurar pelo id"}` se a consulta SQL de `findById` falhar;
-- `400` `{"message":"Erro ao buscar esse produto"}` se a hidratação do produto falhar;
-- `500` se a persistência da movimentação, ou outro erro não convertido em `AppError`, falhar.
-
-### `GET /api/products/:id/movements`
-
-Lista somente as movimentações de um produto, em ordem decrescente de `created_at` no banco.
-
-**Parâmetro:** para alcançar esta rota, o segmento `id` precisa estar presente; um
-segmento presente e vazio após `trim` recebe `400`.
-
-**Resposta `200 OK`:** array, possivelmente vazio.
-
-```json
-[
-  {
-    "id": "dc0615af-68d5-4895-a945-e783a4bc6077",
-    "productId": "9ecf4f56-4b6e-4e49-9972-b47f844b2d9b",
-    "type": "ENTRY",
-    "quantity": 10,
-    "createdAt": "2026-09-25T12:34:56.000Z"
-  }
-]
-```
-
-Diferentemente de `GET /api/products/:id`, esta resposta inclui `productId` em cada item.
-
-**Erros/status:**
-
-- `400` `{"message":"Parâmetro id inválido."}` para segmento `id` presente, mas vazio após `trim`;
-- `404` `{"message":"Produto não encontrado."}` se o produto não existir;
-- `400` `{"message":"Erro ao procurar pelo id"}` se a consulta SQL de `findById` falhar;
-- `400` `{"message":"Erro ao buscar esse produto"}` se a hidratação durante a verificação do produto falhar;
-- `500` se a consulta direta de movimentações falhar ou ocorrer outro erro não convertido em `AppError`.
-
-### `GET /uploads/*`
-
-O Express serve estaticamente arquivos existentes em `backend/uploads` sob o prefixo `/uploads`; essa montagem não usa o prefixo `/api`. Por exemplo, uma referência salva como `http://<host>:<porta>/uploads/camiseta.png` pode ser obtida por `GET` se o arquivo existir.
-
-O conteúdo, `Content-Type`, cache e resposta de sucesso são definidos por `express.static` e pelo arquivo servido, não por controller. Não existe endpoint de upload, nem validação de que um `imageUrl` de produto aponte para esse diretório. Um arquivo inexistente continua para o tratamento padrão de rota não encontrada.
-
-## Formato e tratamento de erros
-
-Erros do tipo `AppError` são processados pelo middleware global e retornam o status associado com exatamente este envelope:
-
-```json
-{ "message": "Descrição do erro" }
-```
-
-Erros que não são `AppError` são registrados no `console.error` como `Erro inesperado:` e retornam:
-
-```http
-HTTP/1.1 500 Internal Server Error
-Content-Type: application/json
-```
-
-```json
-{ "message": "Erro de servidor" }
-```
-
-Não há envelope com código, detalhes de campos, stack trace, identificador de requisição ou lista de erros de validação.
-
-### Rotas não encontradas, método e JSON inválido
-
-- Não existe middleware próprio de `404` nem de `405`. Um path inexistente, um método sem handler para um path existente (por exemplo `PUT /api/products`) ou um arquivo ausente em `/uploads` termina no tratamento padrão do Express, que não segue o envelope JSON da API.
-- `express.json()` é o parser global ativo antes das rotas, com seu limite padrão e sem configuração explícita de `limit`. Para JSON reconhecido pelo parser, o corpo é disponibilizado em `req.body`.
-- Não há parser para formulário URL-encoded, XML ou `multipart/form-data`. Em particular, não há suporte HTTP para enviar arquivos.
-- JSON malformado, corpo que exceda o limite padrão do parser ou outros erros produzidos pelo parser não têm mapeamento específico para `400`: alcançam o `errorHandler` como erro comum e recebem `500` com `{"message":"Erro de servidor"}`.
-- Se o corpo não for analisado como JSON, os controllers de escrita veem os campos obrigatórios como ausentes e devolvem seus erros de validação `400` correspondentes.
-
-## Middlewares
-
-### Ativos
-
-| Ordem | Middleware/montagem | Efeito |
-| --- | --- | --- |
-| 1 | `express.json()` | Analisa JSON antes das rotas com o limite padrão, sem configuração explícita. |
-| 2 | `express.static(...)` em `/uploads` | Expõe os arquivos em `backend/uploads`. |
-| 3 | Router de produtos em `/api` | Registra os seis endpoints de produtos e estoque. Cada controller assíncrono encaminha rejeições para `next`. |
-| 4 | `errorHandler` | Serializa `AppError` e falhas inesperadas conforme a seção anterior. |
-
-### Ausentes no código atual
-
-Não estão registrados middleware de autenticação, autorização/perfis, CORS, rate limiting, upload, validação global por schema, logging HTTP estruturado, correlação de requisições, CSRF, compressão, versionamento de API, handler explícito de `404` ou handler de `405`.
-
-Consequentemente, as rotas implementadas não exigem `Authorization` e o servidor não acrescenta cabeçalhos CORS. A ausência desses componentes descreve o estado atual; não implica que eles já estejam sendo aplicados por infraestrutura externa.
-
-## Compatibilidade e diferenças de contrato
-
-- O backend usa Express 4, Node.js/TypeScript e MySQL. O Dockerfile é multi-stage com `node:22-slim`, Corepack e pnpm; o runtime instala apenas dependências de produção e usa o usuário `node`. O Compose tem valores padrão de desenvolvimento e aceita personalização opcional ao copiar `.env.example` para `.env`.
-- Clientes devem tratar IDs como strings opacas, datas como strings ISO e enums exatamente em maiúsculas. Não há negociação de versão, prefixo de versão (`/v1`) ou contrato OpenAPI implementado.
-- A forma da resposta varia por endpoint: a criação não retorna `quantity`; a listagem não retorna `barCode` nem `movements`; detalhes omitem `productId` dentro de movimentos; e a listagem de movimentos o inclui.
-- O tipo de `price` na criação é número porque vem do JSON da requisição. Para dados lidos do MySQL, `price` é uma coluna `DECIMAL(10,2)` e o repositório não faz conversão explícita. Clientes não devem depender sem teste de que leituras retornem `price` como número; a configuração padrão usual do `mysql2` devolve `DECIMAL` como string.
-- Sem CORS registrado na aplicação, um cliente web em outra origem não recebe permissão CORS do backend. Um cliente mobile/nativo ou uma chamada same-origin não depende desse cabeçalho da mesma forma.
-- `imageUrl` é apenas uma string opcional de produto. A compatibilidade com `/uploads` depende de o cliente usar uma URL alcançável e de o arquivo já existir; o backend não cria nem envia imagens por HTTP.
+O gateway responde a `OPTIONS /api/` com `204` e permite apenas os métodos `GET`, `HEAD` e `POST`, com headers `Authorization` e `Content-Type`, para a origem configurada. O preflight não alcança o verificador JWT; chamadas de negócio continuam exigindo token. Sem `FRONTEND_ORIGIN`, não há acesso CORS a partir de outra origem.
