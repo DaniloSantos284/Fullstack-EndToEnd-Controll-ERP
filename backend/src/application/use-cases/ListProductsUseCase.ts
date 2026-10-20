@@ -1,5 +1,6 @@
 import { ProductRepository } from "../../domain/repositories/ProductRepository";
 import { ProductCategory } from "../../domain/enums/ProductCategory";
+import { Paginated, Pagination, paginate } from "../pagination";
 
 
 type ListProductsOutput = {
@@ -17,16 +18,16 @@ export class ListProductsUseCase {
         private productRepository: ProductRepository
     ) {}
 
-    async execute(): Promise<ListProductsOutput[]> {
-        const products = await this.productRepository.findAll();
+    async execute(pagination: Pagination): Promise<Paginated<ListProductsOutput>> {
+        const products = await this.productRepository.findPage(pagination);
 
-        return products.map(product => ({
+        return paginate(products.map(product => ({
             id: product.id,
             name: product.name,
             price: product.price,
             category: product.category,
             imageUrl: product.imageUrl,
             quantity: product.quantity,
-        }));
+        })), pagination);
     }
 }

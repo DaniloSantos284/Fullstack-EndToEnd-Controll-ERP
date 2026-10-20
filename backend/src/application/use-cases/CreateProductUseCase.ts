@@ -36,8 +36,8 @@ export class CreateProductUseCase {
       name: input.name,
       price: input.price,
       category: input.category,
-      ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
-      ...(input.barCode ? { barCode: input.barCode } : {}),
+      ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+      ...(input.barCode !== undefined ? { barCode: input.barCode } : {}),
     });
 
     await this.productRepository.save(product);
@@ -47,8 +47,8 @@ export class CreateProductUseCase {
       name: product.name,
       price: product.price,
       category: product.category,
-      ...(product.imageUrl ? { imageUrl: product.imageUrl } : {}),
-      ...(product.barCode ? { barCode: product.barCode } : {}),
+      ...(product.imageUrl !== undefined ? { imageUrl: product.imageUrl } : {}),
+      ...(product.barCode !== undefined ? { barCode: product.barCode } : {}),
     };
   }
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { ProductCategory } from "../enums/ProductCategory";
-import { AppError } from "../../application/use-cases/errors/AppError";
+import { DomainError } from "../errors/DomainError";
 
 type ProductProps = {
   id?: unknown;
@@ -35,7 +35,7 @@ function validateOptionalString(
   }
 
   if (typeof value !== "string" || value.length > maxLength) {
-    throw new AppError(message, 400);
+    throw new DomainError(message);
   }
 
   return value;
@@ -44,7 +44,7 @@ function validateOptionalString(
 export class Product {
   public readonly id: string;
   public readonly name: string;
-  public readonly price: number;
+  public readonly priceCents: number;
   public readonly category: ProductCategory;
   public readonly quantity: number;
   public readonly imageUrl?: string;
@@ -55,7 +55,7 @@ export class Product {
       typeof props.id !== "undefined" &&
       (typeof props.id !== "string" || props.id.trim().length === 0)
     ) {
-      throw new AppError("Id do produto inválido.", 400);
+      throw new DomainError("Id do produto inválido.");
     }
 
     if (
@@ -63,7 +63,7 @@ export class Product {
       props.name.trim().length === 0 ||
       props.name.length > MAX_NAME_LENGTH
     ) {
-      throw new AppError("Product name is required", 400);
+      throw new DomainError("Product name is required");
     }
 
     if (
@@ -73,14 +73,14 @@ export class Product {
       props.price > MAX_PRICE ||
       !hasAtMostTwoDecimalPlaces(props.price)
     ) {
-      throw new AppError("Preço inválido", 400);
+      throw new DomainError("Preço inválido");
     }
 
     if (
       typeof props.category !== "string" ||
       !Object.values(ProductCategory).includes(props.category as ProductCategory)
     ) {
-      throw new AppError("Categoria inválida.", 400);
+      throw new DomainError("Categoria inválida.");
     }
 
     const quantity = props.quantity === undefined ? 0 : props.quantity;
@@ -90,7 +90,7 @@ export class Product {
       quantity < 0 ||
       quantity > MAX_SIGNED_INT
     ) {
-      throw new AppError("Quantidade do produto inválida.", 400);
+      throw new DomainError("Quantidade do produto inválida.");
     }
 
     const imageUrl = validateOptionalString(
@@ -106,10 +106,14 @@ export class Product {
 
     this.id = props.id ?? randomUUID();
     this.name = props.name;
-    this.price = props.price;
+    this.priceCents = Math.round(props.price * 100);
     this.category = props.category as ProductCategory;
     this.quantity = quantity;
     if (imageUrl !== undefined) this.imageUrl = imageUrl;
     if (barCode !== undefined) this.barCode = barCode;
+  }
+
+  get price(): number {
+    return this.priceCents / 100;
   }
 }

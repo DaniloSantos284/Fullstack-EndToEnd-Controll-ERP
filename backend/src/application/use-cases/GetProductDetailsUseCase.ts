@@ -3,6 +3,7 @@ import { StockMovementRepository } from "../../domain/repositories/StockMovement
 import { StockMovementType } from "../../domain/enums/StockMovementType";
 import { ProductCategory } from "../../domain/enums/ProductCategory";
 import { AppError } from "./errors/AppError";
+import { Pagination, paginate } from "../pagination";
 
 type StockMovementOutput = {
   id: string;
@@ -20,6 +21,7 @@ type GetProductDetailsOutput = {
   barCode: string | undefined;
   quantity: number;
   movements: StockMovementOutput[];
+  movementsPagination: Pagination & { hasNext: boolean };
 };
 
 export class GetProductDetailsUseCase {
@@ -28,14 +30,17 @@ export class GetProductDetailsUseCase {
     private stockMovementRepository: StockMovementRepository
   ) {}
 
-  async execute(productId: string): Promise<GetProductDetailsOutput> {
+  async execute(productId: string, pagination: Pagination): Promise<GetProductDetailsOutput> {
     const product = await this.productRepository.findById(productId);
 
     if (!product) {
       throw new AppError("Product not found", 404);
     }
 
-    const movements = await this.stockMovementRepository.findByProductId(product.id);
+    const movements = paginate(
+      await this.stockMovementRepository.findPageByProductId(product.id, pagination),
+      pagination,
+    );
 
     return {
       id: product.id,
@@ -45,12 +50,13 @@ export class GetProductDetailsUseCase {
       imageUrl: product.imageUrl,
       barCode: product.barCode,
       quantity: product.quantity,
-      movements: movements.map(movement => ({
+      movements: movements.data.map(movement => ({
         id: movement.id,
         type: movement.type,
         quantity: movement.quantity,
         createdAt: movement.createdAt,
       })),
+      movementsPagination: movements.pagination,
     };
   }
 }

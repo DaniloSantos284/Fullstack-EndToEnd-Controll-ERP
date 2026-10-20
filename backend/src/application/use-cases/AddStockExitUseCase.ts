@@ -41,5 +41,9 @@ export class AddStockExitUseCase {
     if (status === "insufficient_stock") {
       throw new AppError("Estoque insuficiente.", 409);
     }
+
+    if (status === "stock_limit_exceeded") {
+      throw new AppError("Limite de estoque excedido.", 409);
+    }
   }
 }
