@@ -15,8 +15,8 @@ Listagens usam `LIMIT limit+1 OFFSET (page-1)*limit`. `hasNext` é calculado sem
 
 Preço é recebido como número JSON com até duas casas decimais, guardado em centavos inteiros no domínio, enviado como string decimal ao MySQL e armazenado em `DECIMAL(10,2)`. O pool mantém DECIMAL como string na leitura; o mapper reconstitui a entidade. Linhas persistidas inválidas são tratadas como falhas internas, não como erro de entrada do cliente.
 
-O Express aplica request ID, Helmet, limite de JSON, rate limit por IP, rotas e middleware de erro. Os logs são JSON e omitem body, query, headers, SQL e mensagens de erro inesperado. `/health/live` e `/health/ready` são separados. `server.ts` marca readiness negativa no shutdown, fecha HTTP e encerra o pool.
+O Express aplica `Cache-Control: no-store`, request ID, Helmet, rate limit por IP, exigência de JSON em POSTs `/api`, limite de corpo, rotas e middleware de erro. Os logs são JSON e omitem body, query, headers, SQL e mensagens de erro inesperado. `/health/live` e `/health/ready` são separados. `server.ts` marca readiness negativa no shutdown, fecha HTTP e encerra o pool.
 
 No acesso público, o Nginx usa `auth_request` para chamar o verificador interno. A porta `AccessTokenVerifier` fica na aplicação e sua implementação `JwksAccessTokenVerifier` fica na infraestrutura; a decisão de escopo pelo método original fica no controller HTTP. O gateway só encaminha a rota de negócio após resposta `204` do verificador.
 
-Testes Jest/Supertest usam um pool simulado; o teste de integração em `tests/integration/mysql-stock.ts` usa MySQL descartável para verificar concorrência, rollback e SQL de paginação. O CI executa ambos.
+Testes Jest/Supertest usam um pool simulado; o teste de integração em `tests/integration/mysql-stock.ts` usa MySQL descartável para verificar concorrência, rollback e SQL de paginação. A CI também aplica a migração em um fixture legado e verifica o saldo reconciliado antes da integração.

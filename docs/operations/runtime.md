@@ -2,7 +2,7 @@
 
 ## Ambientes e comandos
 
-Use Node 22 LTS e pnpm 12.14.0. Em `backend/`, `pnpm install --frozen-lockfile`, `pnpm dev`, `pnpm build`, `pnpm start`, `pnpm test:ci` e `pnpm test:typecheck` cobrem o fluxo local. `pnpm test:integration` precisa de um MySQL descartável com o schema inicializado e variáveis `DB_*`. Jest/Supertest substituem o pool por mocks; o teste de integração real verifica concorrência e rollback.
+Use Node 22 LTS e pnpm 12.14.0. Em `backend/`, `corepack pnpm install --frozen-lockfile`, `corepack pnpm dev`, `corepack pnpm build`, `corepack pnpm start`, `corepack pnpm test:ci` e `corepack pnpm test:typecheck` cobrem o fluxo local. `corepack pnpm test:integration` precisa de um MySQL descartável com o schema inicializado e variáveis `DB_*`. Jest/Supertest substituem o pool por mocks; o teste de integração real verifica concorrência e rollback.
 
 Na raiz, copie `.env.example` para `.env`, defina `DB_ROOT_PASSWORD` e `DB_PASSWORD` com valores privados e inicie o desenvolvimento:
 
@@ -31,6 +31,12 @@ Para executar `pnpm --dir backend dev` fora do container, use um MySQL acessíve
 
 O Compose exige `DB_ROOT_PASSWORD` e `DB_PASSWORD` não vazios; a senha root não é fornecida à API. `DB_PUBLISHED_PORT` só vale no overlay opcional e não altera `PORT_DB=3306` dentro da rede Docker. `dotenv/config` lê `.env` do diretório de trabalho quando o backend roda fora do Compose.
 
+## Manutenção de versões MySQL
+
+`docker-compose.mysql-8.0-maintenance.yml` e `docker-compose.mysql-8.4-upgrade.yml` apenas substituem a imagem do serviço `db`; eles não fazem backup, upgrade nem downgrade automaticamente. Não são parte do fluxo normal de desenvolvimento ou publicação.
+
+Use o overlay 8.0 somente para manutenção de uma cópia de volume compatível com 8.0. Para qualquer mudança entre versões, faça backup verificado, teste em uma cópia descartável, siga a matriz oficial de compatibilidade do MySQL e valide migração, healthchecks e integração antes de tocar no volume original. Nunca tente abrir um volume já atualizado por uma versão mais nova com uma imagem mais antiga.
+
 ## Gateway público com Nginx
 
 O Compose base não publica a API. `docker-compose.gateway.yml` adiciona Nginx em HTTPS e exige `PUBLIC_HOSTNAME`, `TLS_CERT_PATH`, `TLS_KEY_PATH`, `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_JWKS_URL` não vazios. O provedor OIDC e seus valores ainda não foram definidos; escolha um provedor que forneça JWKS HTTPS e JWTs de acesso com `iss`, `aud`, `sub`, `exp` e os escopos de estoque antes de ligar o overlay público. Para um frontend web em outra origem, configure também `FRONTEND_ORIGIN` como origem HTTPS exata, sem barra final; o gateway libera apenas o preflight `OPTIONS` sem JWT.
@@ -41,6 +47,8 @@ docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build --
 
 O frontend envia o JWT no header `Authorization: Bearer ...` ao Nginx. Para cada chamada `/api/`, `auth_request` chama `/internal/auth/verify` na rede privada. O verificador aceita `RS256` ou `ES256`, confere assinatura, emissor, audiência e expiração, e exige `inventory:read` em GET/HEAD ou `inventory:write` em POST. Nginx não encaminha o bearer token à rota de negócio. O gateway aplica um limite adicional por IP; para várias réplicas ou quotas por usuário, configure um mecanismo compartilhado na borda.
 
+Aplicação e gateway usam `Cache-Control: no-store`. Chamadas POST da API exigem `Content-Type: application/json`; media type ausente ou não JSON retorna `415` e ainda consome a quota do limitador.
+
 Monte certificados TLS legíveis para o container do Nginx. Não acrescente `docker-compose.local.yml` ao comando público: esse overlay expõe a API em loopback e permite contornar `auth_request` a partir do host. Garanta que firewalls e orquestração não publiquem a porta interna 4000 ou `/internal/auth/verify`. O gateway publica somente `/api/`; liveness/readiness ficam na rede privada. A autenticação de usuários e a emissão de JWT são externas a este repositório.
 
 ## Saúde, logs e desligamento
@@ -48,6 +56,10 @@ Monte certificados TLS legíveis para o container do Nginx. Não acrescente `doc
 `GET /health/live` responde quando o processo HTTP está ativo. `GET /health/ready` consulta MySQL e retorna `503` sem detalhes internos se o banco estiver indisponível ou se o processo estiver encerrando. O Compose usa readiness para o healthcheck da API. Ao receber SIGINT/SIGTERM, `server.ts` para de aceitar conexões e fecha o pool, com prazo configurável.
 
 Logs são linhas JSON com evento, status, duração e ID de requisição. Não incluem body, query, Authorization, SQL ou mensagens de erros inesperados. Erros HTTP respondem `{code,message,requestId}`. O ID também sai em `X-Request-Id`.
+
+## CI
+
+O workflow `.github/workflows/backend-ci.yml` roda em push e pull request com permissão somente de leitura. Ele instala pelo lockfile, executa auditoria crítica das dependências de produção, build, typecheck e Jest; valida o template Nginx e os overlays Compose; recria um schema legado, aplica `001_harden_inventory`, confere o saldo reconciliado e roda a integração MySQL. A execução do workflow é a evidência do caminho Docker, pois ele não substitui a validação local sem Engine disponível.
 
 ## Context7 no Codex
 

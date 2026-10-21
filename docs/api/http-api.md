@@ -1,6 +1,6 @@
 # API HTTP
 
-Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gateway podem ter corpo diferente. Não há `/uploads`. Na implantação pública, o frontend envia `Authorization: Bearer <JWT>` ao Nginx; seu `auth_request` consulta um verificador interno antes de encaminhar a chamada à API. Se o frontend web estiver em outra origem, configure `FRONTEND_ORIGIN` no gateway para permitir o preflight CORS sem JWT.
+Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gateway podem ter corpo diferente. Não há `/uploads`. A aplicação e o gateway respondem com `Cache-Control: no-store`. Na implantação pública, o frontend envia `Authorization: Bearer <JWT>` ao Nginx; seu `auth_request` consulta um verificador interno antes de encaminhar a chamada à API. Se o frontend web estiver em outra origem, configure `FRONTEND_ORIGIN` no gateway para permitir o preflight CORS sem JWT.
 
 ## Convenções
 
@@ -15,7 +15,7 @@ Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gatewa
 
 `GET /api/products?page=1&limit=20` retorna `200` com `data` contendo `id`, `name`, `price`, `category`, `imageUrl` quando presente e `quantity`. `barCode` não faz parte da lista.
 
-`POST /api/products` recebe exatamente os campos abaixo e retorna `201` com `id`, `name`, `price`, `category` e os opcionais enviados. O saldo inicial é zero.
+`POST /api/products` recebe `Content-Type: application/json` e exatamente os campos abaixo; retorna `201` com `id`, `name`, `price`, `category` e os opcionais enviados. O saldo inicial é zero.
 
 ```json
 {"name":"Caderno","price":12.50,"category":"OFFICE","imageUrl":"https://example.test/item.png","barCode":"123"}
@@ -27,7 +27,7 @@ Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gatewa
 
 ## Estoque
 
-`POST /api/products/:id/stock/entry` e `POST /api/products/:id/stock/exit` recebem `{ "quantity": 2 }`, retornam `201` com `{ "ok": true }` e rejeitam campos extras. Produto inexistente retorna `404`; saldo insuficiente ou overflow retorna `409`. Cada comando persiste saldo e movimento na mesma transação.
+`POST /api/products/:id/stock/entry` e `POST /api/products/:id/stock/exit` recebem `Content-Type: application/json` e `{ "quantity": 2 }`, retornam `201` com `{ "ok": true }` e rejeitam campos extras. Produto inexistente retorna `404`; saldo insuficiente ou overflow retorna `409`. Cada comando persiste saldo e movimento na mesma transação.
 
 `GET /api/products/:id/movements?page=1&limit=20` retorna uma lista paginada. Cada movimento contém `id`, `productId`, `type` (`ENTRY` ou `EXIT`), `quantity` e `createdAt`.
 
@@ -41,7 +41,7 @@ Formato de erro: `{ "code": "VALIDATION_ERROR", "message": "Dados da requisiçã
 | 404 | Rota ou produto ausente. |
 | 409 | Estoque insuficiente ou limite de saldo. |
 | 413 | JSON maior que `JSON_BODY_LIMIT_KB` (64 KiB por padrão). |
-| 415 | Charset ou codificação do corpo JSON não suportados. |
+| 415 | `Content-Type` ausente/não JSON, charset ou codificação do corpo JSON não suportados. |
 | 429 | Limite local de requisições excedido; inclui `Retry-After`. |
 | 503 | Banco reconhecidamente indisponível ou readiness negativa. |
 | 500 | Falha inesperada, com mensagem genérica. |

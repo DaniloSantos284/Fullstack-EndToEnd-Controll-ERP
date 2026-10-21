@@ -4,7 +4,7 @@ No overlay público, o Nginx recebe o JWT do frontend e faz `auth_request` para 
 
 ## Criação de produto
 
-1. O Express gera `X-Request-Id`, define headers Helmet e aplica o limite de JSON e de requisições.
+1. O Express define `Cache-Control: no-store`, gera `X-Request-Id`, define headers Helmet, aplica o limite de requisições e exige `Content-Type: application/json` antes de ler o corpo JSON.
 2. `CreateProductController` valida query vazia e body estrito com Zod. Campos desconhecidos e tipos inválidos geram `400` antes de acessar o banco.
 3. `CreateProductUseCase` constrói `Product`; a entidade valida nome, preço, categoria, saldo inicial e comprimentos. O preço vira centavos inteiros.
 4. `MySqlProductRepository.save` insere uma linha com preço decimal formatado e quantidade zero.
