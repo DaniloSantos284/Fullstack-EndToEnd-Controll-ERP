@@ -1,59 +1,58 @@
 # Estado de `feat/api-hardening`
 
-Esta página registra o estado da branch em 20/10/2026. Código presente no repositório, testes executados e validações pendentes são distinguidos abaixo.
+Este documento registra a conclusão de implementação em 21/10/2026. Ele separa comportamento entregue, validações executadas nesta árvore e gates que exigem Docker ou GitHub Actions.
 
-## Entregue no repositório
+## Entregue
 
-- Schema MySQL com constraints, saldo materializado, migração versionada e transação com `FOR UPDATE` para movimentos.
-- Validação HTTP estrita com Zod, UUID, paginação com limite, erros `{code,message,requestId}`, Helmet, tamanho máximo de JSON, rate limit local, logs redigidos, liveness, readiness e shutdown gracioso.
-- Jest 30.5.2, Supertest 7.3.0 e pnpm 12.14.0. Há testes de domínio, SQL transacional simulado, HTTP e JWT/JWKS, além de um teste de integração preparado para MySQL real.
-- Docker multi-stage com runtime sem dependências de desenvolvimento e usuário `node`; Compose sem portas publicadas por padrão, overlays locais e Nginx com TLS/`auth_request` para implantação pública.
-- CI com instalação congelada, build, tipos, testes, MySQL descartável e `git diff --check`.
-- O Compose repassa `DB_CONNECTION_LIMIT` à API. Erros de charset/codificação JSON não suportados retornam `415`, e erros de corpo interrompido ou tamanho inconsistente retornam `400`; o contrato e os testes HTTP foram atualizados.
+- Schema MySQL endurecido: constraints, saldo materializado, índice de histórico, migração versionada e transação com `FOR UPDATE` para aplicar movimentos.
+- API com Zod estrito, UUID, paginação limitada, erros `{code,message,requestId}`, request ID, Helmet, limite de JSON, rate limit, `Cache-Control: no-store`, rejeição `415` de POST sem JSON, saúde e desligamento gracioso.
+- Verificação JWT/JWKS por `auth_request` interno, escopos de leitura/escrita, Nginx com TLS, CORS explícito, limite de borda e `no-store` inclusive nas respostas geradas pelo gateway.
+- Jest, Supertest e integração MySQL. A suíte HTTP inclui os contratos de cache, media type e quota; a integração verifica concorrência, rollback, paginação e preço.
+- Docker multi-stage sem dependências de desenvolvimento no runtime e execução com o usuário `node`. Compose não publica portas por padrão; há overlays locais, de gateway e de manutenção MySQL documentados.
+- CI para push e pull request, com permissões `contents: read`, instalação congelada, auditoria crítica de dependências de produção, build, tipos, testes, Nginx, Compose, migração real de fixture legado, integração MySQL, diagnóstico e limpeza.
+- `proxy-addr` transitivo está fixado em `2.0.8` via override do pnpm para corrigir a vulnerabilidade crítica detectada na auditoria.
 
-## Validação executada até aqui
+## Validação executada localmente
 
 | Verificação | Resultado |
 | --- | --- |
-| Instalação com lockfile congelado, build TypeScript e checagem de tipos de teste | Passaram localmente. |
-| Jest/Supertest | 7 suítes e 42 testes passaram após a correção HTTP; cobertura de linhas de 93,20%. |
-| `git diff --check` | Passou após a correção HTTP e a atualização do Compose. |
-| `docker compose config --quiet` | Passou para os overlays local e público com variáveis de exemplo. Isso valida a composição, não a inicialização dos serviços. |
-| MySQL real, migração e containers | **Pendente.** Em duas tentativas, incluindo uma após reiniciar o Docker Desktop, o engine mudou de `running` para `stopping` durante o pull de `mysql:9.7` e a CLI recebeu `unexpected EOF`. O diagnóstico registrou falha no `wsl-bootstrap`; reiniciar o WSL não recuperou o Desktop. Nenhum teste com MySQL real terminou. |
-| Nginx em execução | **Pendente.** O template e o fluxo `auth_request` passaram por revisão estática. Uma etapa de `nginx -t` com certificado descartável foi adicionada ao CI, mas ainda não rodou; a execução local também depende de um engine Docker estável. |
+| `corepack pnpm install --frozen-lockfile` | Passou com pnpm 12.14.0. |
+| `corepack pnpm test:ci` | Passou: 8 suítes, 48 testes e 93,31% de cobertura de linhas. |
+| `corepack pnpm test:typecheck` | Passou. |
+| `corepack pnpm build` | Passou. |
+| `corepack pnpm audit --prod` e `corepack pnpm audit --prod --audit-level=critical` | Passaram: nenhuma vulnerabilidade conhecida. |
+| Teste HTTP focado de hardening | Passou: 6 testes, incluindo `415` seguido de `429` para POST inválido. |
+| `git diff --check` | Passou após a atualização da documentação. |
 
-## O que falta para concluir a branch
+## Gates externos ainda não executados nesta sessão
 
-1. Com o Docker Desktop estável, subir um Compose **descartável**, confirmar healthchecks e migração, executar `pnpm --dir backend test:integration` contra MySQL real e testar `nginx -t` com certificado temporário. O projeto de verificação usado até agora foi `hardeningverify20261020x7q`; conferir seus recursos antes de removê-los.
-2. Executar o workflow de CI, que agora também verifica a sintaxe do Nginx, e registrar seu resultado. Repetir `git diff --check` após qualquer ajuste adicional.
+- Docker não está disponível nesta distribuição WSL; por isso não foram executados localmente `docker compose config`, `nginx -t`, pull/build de imagens, healthchecks, migração em MySQL real ou `test:integration`.
+- O workflow alterado não foi disparado nesta sessão, pois nenhuma alteração foi enviada ao GitHub. A primeira execução em push ou pull request deve ficar verde para comprovar o fluxo Docker e a migração legada.
 
-A publicação na internet requer, além da conclusão da branch, um provedor OIDC que emita os JWTs do frontend, os valores reais de `issuer`, `audience` e JWKS, DNS e certificados TLS. O serviço de emissão de tokens não existe neste repositório. A configuração do Context7 já referencia `CONTEXT7_API_KEY` do ambiente do Codex sem gravar ou inspecionar seu valor; uma nova sessão do Codex deve carregar o MCP.
+Esses são limites de evidência do ambiente, não funcionalidades ausentes no repositório. O CI contém os passos para exercer os dois caminhos.
 
-## Dependência para publicação na internet
+## Dependências de publicação
 
-O frontend usará JWT e o Nginx fará a decisão de acesso antes de encaminhar `/api/`. O serviço interno `/internal/auth/verify` valida JWT por JWKS e escopos, mas o provedor OIDC ainda não foi escolhido. Para iniciar o overlay público, configure `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_JWKS_URL`, `PUBLIC_HOSTNAME` e certificados TLS reais; obtenha JWTs de acesso com `inventory:read` e/ou `inventory:write`. Não publique a porta 4000 diretamente.
+Uma implantação pública ainda requer um provedor OIDC que emita JWTs com `iss`, `aud`, `sub`, `exp` e `inventory:read` e/ou `inventory:write`, além de valores reais de `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_JWKS_URL`, DNS e certificados TLS. A emissão de tokens não faz parte deste repositório. Não publique a porta interna 4000 nem `/internal/auth/verify`.
 
-Não há banco persistente com dados reais a migrar nesta etapa. A migração de volumes de desenvolvimento antigos deve ser testada em cópia antes de ser aplicada a qualquer dado que passe a ser relevante.
+## Comandos de revisão
 
-## Verificação
-
-Na raiz do repositório:
+Na raiz:
 
 ```bash
-pnpm --dir backend install --frozen-lockfile
-pnpm --dir backend build
-pnpm --dir backend test:ci
-pnpm --dir backend test:typecheck
+corepack pnpm --dir backend install --frozen-lockfile
+corepack pnpm --dir backend test:ci
+corepack pnpm --dir backend test:typecheck
+corepack pnpm --dir backend build
+corepack pnpm --dir backend audit --prod --audit-level=critical
 git diff --check
 ```
 
-Com um MySQL descartável inicializado, rode `pnpm --dir backend test:integration`. Para validar os containers, configure senhas locais e execute `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build --wait`. O teste de integração verifica duas saídas concorrentes de 7 sobre saldo 10: apenas uma é aplicada, o saldo final é 3 e existe uma saída; também verifica rollback quando o INSERT falha.
+Em host com Docker, depois de preencher `.env` com senhas locais:
 
-| Critério | Evidência |
-| --- | --- |
-| Contratos HTTP | Supertest cobre criação, listagem, movimentos, paginação, `400/404/409/413/429/503/500`, headers e saúde. |
-| Integridade | Testes simulados cobrem lock, transação, rollback, overflow e concorrência; a execução com MySQL real ainda está pendente. |
-| Segurança | O código do gateway exige JWT válido e escopos antes de `/api/`; a validação em Nginx real e os valores de implantação ainda estão pendentes. |
-| Build e operação | TypeScript, CI, Compose healthchecks, shutdown e logs estruturados. |
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build --wait
+```
 
-As respostas paginadas e os erros padronizados mudam o contrato HTTP anterior. Como não há frontend neste repositório, a integração futura deve usar [o contrato atual](api/http-api.md).
+Para integração MySQL pelo host, acrescente `-f docker-compose.db-port.yml`, configure `DB_*` para `127.0.0.1:3307` e execute `corepack pnpm --dir backend test:integration`. O workflow de CI também recria o schema legado e executa `001_harden_inventory`; use-o como gate antes de merge.

@@ -9,6 +9,7 @@
 | Invariantes de estoque | [Domínio](domain/inventory.md) |
 | Schema e migração | [MySQL](data/mysql.md) |
 | Variáveis, containers e gateway | [Operação](operations/runtime.md) |
+| Instalação, banco, execução e testes do serviço | [README do backend](../backend/README.md) |
 | Critérios da branch | [feat/api-hardening](feat-api-hardening-finalizacao.md) |
 | Visão futura do ERP | [Roadmap](roadmap.md) |
 

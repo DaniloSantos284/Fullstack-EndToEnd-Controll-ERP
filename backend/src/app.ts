@@ -5,6 +5,7 @@ import { db } from "./infra/db/mysql/connection";
 import productsRoutes from "./http/routes/products.routes";
 import { HttpError } from "./http/errors/HttpError";
 import { errorHandler } from "./http/middlewares/errorHandler";
+import { noStore, requireJsonContentType } from "./http/middlewares/httpHardening";
 import { createRateLimit } from "./http/middlewares/rateLimit";
 import { requestContext } from "./http/middlewares/requestContext";
 import { runtimeState } from "./http/runtimeState";
@@ -15,9 +16,11 @@ const app: Express = express();
 
 app.set("trust proxy", env.trustProxyHops);
 app.disable("x-powered-by");
+app.use(noStore);
 app.use(requestContext);
 app.use(helmet());
 app.use("/api", createRateLimit(env.rateLimitMaxRequests, env.rateLimitWindowMs));
+app.use("/api", requireJsonContentType);
 app.use(express.json({ limit: `${env.jsonBodyLimitKb}kb` }));
 
 app.get("/health/live", (_req, res) => {
