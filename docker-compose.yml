@@ -1,41 +1,72 @@
 services:
   db:
-    image: mysql:8.0
-    container_name: stock_db
+    image: mysql:9.7
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_DATABASE}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${DB_DATABASE:-stockdb}
+      MYSQL_USER: ${DB_USER:-stock_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     volumes:
       - db_data:/var/lib/mysql
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports: 
-      - "${PORT_DB}:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u${DB_USER}", "-p${DB_PASSWORD}"]
-      interval: 30s
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --protocol=TCP -h 127.0.0.1 -u \"$$MYSQL_USER\" --database=\"$$MYSQL_DATABASE\" --execute='SELECT 1' >/dev/null"]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
     networks:
       - internal
-      
-  api:
-    build: ./backend
-    container_name: stock_api
-    restart: unless-stopped
-    env_file: .env
+
+  migrate:
+    image: mysql:9.7
+    restart: "no"
     environment:
-      - DB_HOST=${DB_HOST}
-      - PORT_DB=${PORT_DB}
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${DB_DATABASE:-stockdb}
+      MYSQL_USER: ${DB_USER:-stock_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "/migrations/migrate.sh"]
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ./backend/uploads:/usr/src/app/uploads
-    ports:
-      - "${PORT_APP}:4000"
+    networks:
+      - internal
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DB_HOST: db
+      PORT_DB: 3306
+      DB_USER: ${DB_USER:-stock_user}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_DATABASE: ${DB_DATABASE:-stockdb}
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-10}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+      JSON_BODY_LIMIT_KB: ${JSON_BODY_LIMIT_KB:-64}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+      JWT_READ_SCOPE: ${JWT_READ_SCOPE:-inventory:read}
+      JWT_WRITE_SCOPE: ${JWT_WRITE_SCOPE:-inventory:write}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - internal
     deploy:
@@ -43,7 +74,6 @@ services:
         limits:
           memory: 512M
 
-# Definição das redes e volumes
 networks:
   internal:
     driver: bridge

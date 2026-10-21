@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.jest-cache/
+.corepack/
+*.tsbuildinfo
+.env
+.env.*
+.root-staging/*
+.jest-cache/*
+.corepack/*

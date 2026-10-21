@@ -1,0 +1,5 @@
+# Local development only: exposes the API on the host's loopback interface.
+services:
+  api:
+    ports:
+      - "127.0.0.1:${PORT_APP:-4000}:4000"

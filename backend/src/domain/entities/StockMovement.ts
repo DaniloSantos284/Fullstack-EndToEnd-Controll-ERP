@@ -1,13 +1,15 @@
-import { AppError } from "../../application/use-cases/errors/AppError";
+import { DomainError } from "../errors/DomainError";
 import { StockMovementType } from "../enums/StockMovementType";
 
 type StockMovementProps = {
-  id: string;
-  productId: string;
-  type: StockMovementType;
-  quantity: number;
-  createdAt?: Date;
+  id: unknown;
+  productId: unknown;
+  type: unknown;
+  quantity: unknown;
+  createdAt?: unknown;
 };
+
+const MAX_SIGNED_INT = 2_147_483_647;
 
 export class StockMovement {
   public readonly id: string;
@@ -17,15 +19,36 @@ export class StockMovement {
   public readonly createdAt: Date;
 
   constructor(props: StockMovementProps) {
-    if (props.quantity <= 0) {
-      throw new AppError("A quantidade de movimento deve ser maior que zero.", 400);
+    if (
+      typeof props.quantity !== "number" ||
+      !Number.isSafeInteger(props.quantity) ||
+      props.quantity <= 0 ||
+      props.quantity > MAX_SIGNED_INT
+    ) {
+      throw new DomainError("A quantidade de movimento deve ser um inteiro positivo válido.");
+    }
+
+    if (
+      props.type !== StockMovementType.ENTRY &&
+      props.type !== StockMovementType.EXIT
+    ) {
+      throw new DomainError("Tipo de movimento inválido.");
+    }
+
+    const createdAt = props.createdAt === undefined ? new Date() : props.createdAt;
+    if (!(createdAt instanceof Date) || !Number.isFinite(createdAt.getTime())) {
+      throw new DomainError("Data de movimento inválida.");
+    }
+
+    if (typeof props.id !== "string" || typeof props.productId !== "string") {
+      throw new DomainError("Identificador de movimento inválido.");
     }
 
     this.id = props.id;
     this.productId = props.productId;
     this.type = props.type;
     this.quantity = props.quantity;
-    this.createdAt = props.createdAt ?? new Date();
+    this.createdAt = new Date(createdAt.getTime());
   }
 
   isEntry(): boolean {

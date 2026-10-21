@@ -1,0 +1,5 @@
+# Optional local maintenance access: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up
+services:
+  db:
+    ports:
+      - "127.0.0.1:${DB_PUBLISHED_PORT:-3307}:3306"

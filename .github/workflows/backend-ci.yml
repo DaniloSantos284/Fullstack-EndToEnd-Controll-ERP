@@ -1,0 +1,138 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      DB_ROOT_PASSWORD: ci-root-only
+      DB_USER: stock_user
+      DB_PASSWORD: ci-app-only
+      DB_DATABASE: stockdb
+      DB_PUBLISHED_PORT: '3307'
+      PORT_APP: '4000'
+      GATEWAY_PORT: '8443'
+      JWT_ISSUER: https://issuer.example.test
+      JWT_AUDIENCE: stock-api
+      JWT_JWKS_URL: https://issuer.example.test/.well-known/jwks.json
+      PUBLIC_HOSTNAME: api.example.test
+      FRONTEND_ORIGIN: https://app.example.test
+      TLS_CERT_PATH: /tmp/ci-gateway.crt
+      TLS_KEY_PATH: /tmp/ci-gateway.key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enable pnpm 12.14.0
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.14.0 --activate
+      - name: Install
+        run: pnpm --dir backend install --frozen-lockfile
+      - name: Audit production dependencies
+        run: pnpm --dir backend audit --prod --audit-level=critical
+      - name: Build and typecheck
+        run: |
+          pnpm --dir backend build
+          pnpm --dir backend test:typecheck
+      - name: Test
+        run: pnpm --dir backend test:ci
+      - name: Check Nginx gateway configuration
+        shell: bash
+        run: |
+          cert_dir="$(mktemp -d)"
+          trap 'rm -rf "$cert_dir"' EXIT
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt" \
+            -days 1 -subj '/CN=example.test' >/dev/null 2>&1
+          docker run --rm --network none --add-host api:127.0.0.1 \
+            -e PUBLIC_HOSTNAME=example.test \
+            -e FRONTEND_ORIGIN=https://app.example.test \
+            -v "$PWD/deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            -v "$cert_dir:/etc/nginx/tls:ro" \
+            nginx:stable-alpine nginx -t
+      - name: Validate Compose overlays
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.gateway.yml config --quiet
+      - name: Start disposable MySQL only
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --wait db
+      - name: Load legacy schema and stock history
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml exec -T \
+            -e MYSQL_PWD="$DB_ROOT_PASSWORD" db \
+            mysql --protocol=socket --user=root --execute "DROP DATABASE IF EXISTS \`$DB_DATABASE\`; CREATE DATABASE \`$DB_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml exec -T \
+            -e MYSQL_PWD="$DB_ROOT_PASSWORD" db \
+            mysql --protocol=socket --user=root --database="$DB_DATABASE" \
+            < db/migrations/fixtures/legacy-pre-001-harden-inventory.sql
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml exec -T \
+            -e MYSQL_PWD="$DB_ROOT_PASSWORD" db \
+            mysql --protocol=socket --user=root --database="$DB_DATABASE" --execute "
+              INSERT INTO products (id, name, quantity, price, category)
+              VALUES ('00000000-0000-4000-8000-000000000001', 'Legacy reconciliation product', 999, 12.50, 'FOOD');
+              INSERT INTO stock_movements (id, product_id, type, quantity)
+              VALUES
+                ('00000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000001', 'in', 12),
+                ('00000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000001', 'out', 5);
+            "
+      - name: Run inventory hardening migration
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up --no-deps --exit-code-from migrate migrate
+      - name: Verify migrated legacy inventory
+        shell: bash
+        run: |
+          migration_version="$(docker compose -f docker-compose.yml -f docker-compose.db-port.yml exec -T \
+            -e MYSQL_PWD="$DB_ROOT_PASSWORD" db \
+            mysql --protocol=socket --user=root --database="$DB_DATABASE" --batch --skip-column-names \
+            --execute "SELECT version FROM schema_migrations WHERE version = '001_harden_inventory';")"
+          test "$migration_version" = '001_harden_inventory'
+          reconciled_quantity="$(docker compose -f docker-compose.yml -f docker-compose.db-port.yml exec -T \
+            -e MYSQL_PWD="$DB_ROOT_PASSWORD" db \
+            mysql --protocol=socket --user=root --database="$DB_DATABASE" --batch --skip-column-names \
+            --execute "SELECT quantity FROM products WHERE id = '00000000-0000-4000-8000-000000000001';")"
+          test "$reconciled_quantity" = '7'
+      - name: Start API after successful migration
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --no-deps --build --wait api
+      - name: Test real MySQL transactions
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          PORT_DB: '3307'
+        run: pnpm --dir backend test:integration
+      - name: Show service diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml ps || true
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml logs --no-color || true
+      - name: Stop disposable services
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml down --volumes --remove-orphans
+      - name: Check whitespace
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = 'pull_request' ]; then
+            base="$PR_BASE_SHA"
+          else
+            base="$PUSH_BEFORE"
+          fi
+          if [ -z "$base" ] || [ "$base" = '0000000000000000000000000000000000000000' ]; then
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+          git diff --check "$base" "$HEAD_SHA"

@@ -1,25 +1,20 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { AddStockEntryUseCase } from "../../application/use-cases/AddStockEntryUseCase";
-import { AppError } from "../../application/use-cases/errors/AppError";
-
+import {
+  emptyQuerySchema,
+  parseHttpInput,
+  productIdParamsSchema,
+  stockMovementBodySchema,
+} from "../schemas/products.schemas";
 
 export class AddStockEntryController {
-    constructor(private useCase: AddStockEntryUseCase) {}
+  constructor(private readonly useCase: AddStockEntryUseCase) {}
 
-    async handle(req: Request, res: Response): Promise<Response> {
-        const { id } = req.params;
-        const { quantity } = req.body ?? {};
-
-        if (typeof id !== "string" || id.trim().length === 0) {
-            throw new AppError("Parâmetro id inválido.", 400);
-        }
-
-        if (typeof quantity !== "number" || Number.isNaN(quantity) || quantity <= 0) {
-            throw new AppError("Campo quantity inválido. Deve ser número > 0.", 400);
-        }
-
-        await this.useCase.execute({ productId: id, quantity });
-
-        return res.status(201).json({ ok: true });
-    }
+  async handle(req: Request, res: Response): Promise<Response> {
+    const { id } = parseHttpInput(productIdParamsSchema, req.params);
+    parseHttpInput(emptyQuerySchema, req.query);
+    const { quantity } = parseHttpInput(stockMovementBodySchema, req.body);
+    await this.useCase.execute({ productId: id, quantity });
+    return res.status(201).json({ ok: true });
+  }
 }
