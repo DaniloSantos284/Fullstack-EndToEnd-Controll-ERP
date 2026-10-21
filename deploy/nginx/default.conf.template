@@ -7,6 +7,7 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_certificate /etc/nginx/tls/server.crt;
     ssl_certificate_key /etc/nginx/tls/server.key;
+    add_header Cache-Control "no-store" always;
 
     location = /_auth {
         internal;
@@ -24,12 +25,14 @@ server {
             add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
             add_header Access-Control-Max-Age 600 always;
             add_header Vary "Origin" always;
+            add_header Cache-Control "no-store" always;
             return 204;
         }
 
         add_header Access-Control-Allow-Origin "${FRONTEND_ORIGIN}" always;
         add_header Access-Control-Expose-Headers "X-Request-Id, Retry-After" always;
         add_header Vary "Origin" always;
+        add_header Cache-Control "no-store" always;
         auth_request /_auth;
         limit_req zone=inventory_api burst=20 nodelay;
         limit_req_status 429;
