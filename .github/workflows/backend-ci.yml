@@ -66,14 +66,8 @@ jobs:
             nginx:stable-alpine /bin/sh -ec '
               nginx -t
               rendered_config="$(nginx -T 2>&1)"
-              case "$rendered_config" in
-                *proxy_set_header\ Authorization\ \"\"\;*) ;;
-                *) exit 1 ;;
-              esac
-              case "$rendered_config" in
-                *auth_request_set\ \$auth_request_status\ \$upstream_status\;*) ;;
-                *) exit 1 ;;
-              esac
+              printf '%s\n' "$rendered_config" | grep -F 'proxy_set_header Authorization "";'
+              printf '%s\n' "$rendered_config" | grep -F 'auth_request_set $auth_request_status $upstream_status;'
             '
       - name: Validate Compose overlays
         run: |
