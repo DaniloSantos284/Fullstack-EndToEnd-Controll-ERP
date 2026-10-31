@@ -1,0 +1,71 @@
+limit_req_zone $binary_remote_addr zone=inventory_api:10m rate=10r/s;
+
+server {
+    listen 443 ssl;
+    server_name ${PUBLIC_HOSTNAME};
+    server_tokens off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_certificate /etc/nginx/tls/server.crt;
+    ssl_certificate_key /etc/nginx/tls/server.key;
+    client_max_body_size ${JSON_BODY_LIMIT_KB}k;
+    add_header Cache-Control "no-store" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location = /_auth {
+        internal;
+        proxy_pass http://api:4000/internal/auth/verify;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header X-Original-Method $request_method;
+    }
+
+    location /api/ {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin "${FRONTEND_ORIGIN}" always;
+            add_header Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
+            add_header Access-Control-Max-Age 600 always;
+            add_header Vary "Origin" always;
+            add_header Cache-Control "no-store" always;
+            add_header Strict-Transport-Security "max-age=31536000" always;
+            return 204;
+        }
+
+        add_header Access-Control-Allow-Origin "${FRONTEND_ORIGIN}" always;
+        add_header Access-Control-Expose-Headers "X-Request-Id, Retry-After" always;
+        add_header Vary "Origin" always;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        auth_request /_auth;
+        auth_request_set $auth_request_status $upstream_status;
+        error_page 500 = @auth_request_error;
+        limit_req zone=inventory_api burst=20 nodelay;
+        limit_req_status 429;
+        proxy_pass http://api:4000;
+        proxy_set_header Host $host;
+        proxy_set_header Authorization "";
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Strict-Transport-Security;
+    }
+
+    location / {
+        return 404;
+    }
+
+    location @auth_request_error {
+        internal;
+        default_type application/json;
+        add_header Access-Control-Allow-Origin "${FRONTEND_ORIGIN}" always;
+        add_header Access-Control-Expose-Headers "X-Request-Id, Retry-After" always;
+        add_header Vary "Origin" always;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        if ($auth_request_status = 503) {
+            return 503 '{"code":"SERVICE_UNAVAILABLE","message":"Serviço temporariamente indisponível."}';
+        }
+        return 500 '{"code":"INTERNAL_ERROR","message":"Erro interno."}';
+    }
+}

@@ -1,73 +1,119 @@
 import { randomUUID } from "crypto";
-import { StockMovement } from "./StockMovement";
 import { ProductCategory } from "../enums/ProductCategory";
-import { AppError } from "../../application/use-cases/errors/AppError";
+import { DomainError } from "../errors/DomainError";
 
 type ProductProps = {
-  name: string;
-  price: number;
-  category: ProductCategory;
-  imageUrl?: string;
-  barCode?: string;
-  stockMovements?: StockMovement[];
+  id?: unknown;
+  name: unknown;
+  price: unknown;
+  category: unknown;
+  quantity?: unknown;
+  imageUrl?: unknown;
+  barCode?: unknown;
 };
+
+const MAX_NAME_LENGTH = 255;
+const MAX_IMAGE_URL_LENGTH = 500;
+const MAX_BAR_CODE_LENGTH = 100;
+const MAX_SIGNED_INT = 2_147_483_647;
+const MAX_PRICE = 99_999_999.99;
+
+function hasAtMostTwoDecimalPlaces(value: number): boolean {
+  const cents = value * 100;
+  const roundingError = Number.EPSILON * Math.max(1, Math.abs(cents)) * 4;
+
+  return Math.abs(cents - Math.round(cents)) <= roundingError;
+}
+
+function validateOptionalString(
+  value: unknown,
+  maxLength: number,
+  message: string
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || value.length > maxLength) {
+    throw new DomainError(message);
+  }
+
+  return value;
+}
 
 export class Product {
   public readonly id: string;
   public readonly name: string;
-  private price: number;
-  private category: ProductCategory;
-  public imageUrl?: string;
-  public barCode?: string;
-
-  private stockMovements: StockMovement[] = [];
+  public readonly priceCents: number;
+  public readonly category: ProductCategory;
+  public readonly quantity: number;
+  public readonly imageUrl?: string;
+  public readonly barCode?: string;
 
   constructor(props: ProductProps) {
-    if (!props.name || props.name.trim().length === 0) {
-      throw new AppError("Product name is required", 400);
+    if (
+      typeof props.id !== "undefined" &&
+      (typeof props.id !== "string" || props.id.trim().length === 0)
+    ) {
+      throw new DomainError("Id do produto inválido.");
     }
 
-    if (props.price < 0) {
-      throw new AppError("Product price cannot be negative", 400);
+    if (
+      typeof props.name !== "string" ||
+      props.name.trim().length === 0 ||
+      props.name.length > MAX_NAME_LENGTH
+    ) {
+      throw new DomainError("Product name is required");
     }
 
-    this.id = randomUUID();
-    this.name = props.name;
-    this.price = props.price;
-    this.category = props.category;
-    // Usando exactOpcionalPropietyTypes, só atribui se existir
-    if (props.imageUrl) this.imageUrl = props.imageUrl;
-    if (props.barCode) this.barCode = props.barCode;
+    if (
+      typeof props.price !== "number" ||
+      !Number.isFinite(props.price) ||
+      props.price < 0 ||
+      props.price > MAX_PRICE ||
+      !hasAtMostTwoDecimalPlaces(props.price)
+    ) {
+      throw new DomainError("Preço inválido");
+    }
 
-    if (props.stockMovements) this.stockMovements = props.stockMovements;
-  }
+    if (
+      typeof props.category !== "string" ||
+      !Object.values(ProductCategory).includes(props.category as ProductCategory)
+    ) {
+      throw new DomainError("Categoria inválida.");
+    }
 
-  /**
-   * Quantidade atual em estoque calculada
-   * com base nos movimentos
-   */
-  get quantity(): number {
-    return this.stockMovements.reduce(
-      (total, movement) => total + movement.getSignedQuantity(),
-      0
+    const quantity = props.quantity === undefined ? 0 : props.quantity;
+    if (
+      typeof quantity !== "number" ||
+      !Number.isSafeInteger(quantity) ||
+      quantity < 0 ||
+      quantity > MAX_SIGNED_INT
+    ) {
+      throw new DomainError("Quantidade do produto inválida.");
+    }
+
+    const imageUrl = validateOptionalString(
+      props.imageUrl,
+      MAX_IMAGE_URL_LENGTH,
+      "URL da imagem inválida."
     );
+    const barCode = validateOptionalString(
+      props.barCode,
+      MAX_BAR_CODE_LENGTH,
+      "Código de barras inválido."
+    );
+
+    this.id = props.id ?? randomUUID();
+    this.name = props.name;
+    this.priceCents = Math.round(props.price * 100);
+    this.category = props.category as ProductCategory;
+    this.quantity = quantity;
+    if (imageUrl !== undefined) this.imageUrl = imageUrl;
+    if (barCode !== undefined) this.barCode = barCode;
   }
 
-  /**
-   * Registra um novo movimento de estoque
-   */
-  addMovement(movement: StockMovement): void {
-    if (movement.isExit() && this.quantity < movement.quantity) {
-      throw new AppError("Insufficient stock", 400);
-    }
-
-    this.stockMovements.push(movement);
-  }
-
-  /**
-   * Retorna cópia imutável dos movimentos
-   */
-  get movements(): StockMovement[] {
-    return [...this.stockMovements];
+  get price(): number {
+    return this.priceCents / 100;
   }
 }
