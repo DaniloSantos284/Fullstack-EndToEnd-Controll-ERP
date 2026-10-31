@@ -3,7 +3,9 @@
 -- preflight queries below first, remediate every row from the non-remediable
 -- checks, and only then execute the APPLY section during a maintenance window.
 -- NULL timestamp results are remediated by APPLY. DDL in this migration is not
--- transactional. This script is intentionally non-idempotent and must be run once.
+-- transactional. This SQL file itself is intentionally non-idempotent: run it
+-- only through migrate.sh, which holds one MySQL advisory-lock session and
+-- verifies the completed schema/data state before writing its migration marker.
 
 -- PREFLIGHT: Names must remain nonblank after trimming and fit VARCHAR(255).
 SELECT
@@ -187,6 +189,8 @@ SET created_at = CURRENT_TIMESTAMP(3)
 WHERE created_at IS NULL;
 
 -- Recompute the canonical balance before adding its nonnegative CHECK constraint.
+-- Quantity is the signed movement history: SUM(in.quantity) - SUM(out.quantity).
+-- Products with no movement history intentionally reconcile to zero.
 UPDATE products AS p
 LEFT JOIN (
     SELECT

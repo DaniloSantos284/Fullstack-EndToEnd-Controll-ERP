@@ -22,6 +22,15 @@ app.use(helmet());
 app.use("/api", createRateLimit(env.rateLimitMaxRequests, env.rateLimitWindowMs));
 app.use("/api", requireJsonContentType);
 app.use(express.json({ limit: `${env.jsonBodyLimitKb}kb` }));
+if (env.gatewayTestAuthorizationProbe) {
+  app.use("/api", (req, res, next) => {
+    res.setHeader(
+      "X-Gateway-Test-Authorization",
+      req.header("Authorization") ? "present" : "absent",
+    );
+    next();
+  });
+}
 
 app.get("/health/live", (_req, res) => {
   res.status(200).json({ status: "ok" });

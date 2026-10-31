@@ -5,6 +5,21 @@ import { HttpError } from "../errors/HttpError";
 
 const MAX_SIGNED_INT = 2_147_483_647;
 const MAX_PRICE = 99_999_999.99;
+const MAX_PAGE_LIMIT = 100;
+const MAX_PAGINATION_OFFSET = 10_000;
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_LIMIT = 20;
+
+const httpImageUrl = z.string().max(500).refine((value) => {
+  if (value === "") return true;
+
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+});
 
 const positiveIntegerQuery = (max: number) => z.string().regex(/^[1-9]\d*$/)
   .transform(Number)
@@ -15,8 +30,10 @@ export const emptyQuerySchema = z.strictObject({});
 
 export const paginationQuerySchema = z.strictObject({
   page: positiveIntegerQuery(1_000_000).optional(),
-  limit: positiveIntegerQuery(100).optional(),
-});
+  limit: positiveIntegerQuery(MAX_PAGE_LIMIT).optional(),
+}).refine(({ page = DEFAULT_PAGE, limit = DEFAULT_PAGE_LIMIT }) =>
+  (page - 1) * limit <= MAX_PAGINATION_OFFSET,
+);
 
 export const createProductBodySchema = z.strictObject({
   name: z.string().trim().min(1).max(255),
@@ -26,7 +43,7 @@ export const createProductBodySchema = z.strictObject({
     return Math.abs(cents - Math.round(cents)) <= tolerance;
   }, "O preço deve ter no máximo duas casas decimais."),
   category: z.enum(ProductCategory),
-  imageUrl: z.string().max(500).optional(),
+  imageUrl: httpImageUrl.optional(),
   barCode: z.string().max(100).optional(),
 });
 
@@ -46,5 +63,5 @@ export function parseHttpInput<T>(schema: z.ZodType<T>, input: unknown): T {
 
 export function paginationFromRequest(req: Request): PaginationInput {
   const query = parseHttpInput(paginationQuerySchema, req.query);
-  return { page: query.page ?? 1, limit: query.limit ?? 20 };
+  return { page: query.page ?? DEFAULT_PAGE, limit: query.limit ?? DEFAULT_PAGE_LIMIT };
 }

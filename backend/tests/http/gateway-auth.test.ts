@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
 import type { AccessTokenVerifier } from '../../src/application/security/AccessTokenVerifier';
+import { AuthenticationInfrastructureError } from '../../src/application/security/AuthenticationInfrastructureError';
 import { VerifyGatewayTokenController } from '../../src/http/controllers/VerifyGatewayTokenController';
 import { errorHandler } from '../../src/http/middlewares/errorHandler';
 import { requestContext } from '../../src/http/middlewares/requestContext';
@@ -30,7 +31,11 @@ describe('verificação do subrequest do gateway', () => {
       .set('Authorization', 'Bearer token')
       .set('X-Original-Method', 'GET')
       .expect(503);
-    expect(response.body.code).toBe('SERVICE_UNAVAILABLE');
+    expect(response.body).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Verificação de acesso indisponível.',
+      requestId: expect.any(String),
+    });
   });
 
   it('rejeita ausência de bearer token', async () => {
@@ -38,7 +43,52 @@ describe('verificação do subrequest do gateway', () => {
       .get('/internal/auth/verify')
       .set('X-Original-Method', 'GET')
       .expect(401);
-    expect(response.body.code).toBe('UNAUTHORIZED');
+    expect(response.body).toEqual({
+      code: 'UNAUTHORIZED',
+      message: 'Token ausente ou inválido.',
+      requestId: expect.any(String),
+    });
+  });
+
+  it('retorna 503 genérico somente para falha de infraestrutura de autenticação', async () => {
+    const unavailableVerifier: AccessTokenVerifier = {
+      verify: async () => {
+        throw new AuthenticationInfrastructureError();
+      },
+    };
+
+    const response = await request(createAuthApp(unavailableVerifier))
+      .get('/internal/auth/verify')
+      .set('Authorization', 'Bearer token')
+      .set('X-Original-Method', 'GET')
+      .expect(503);
+
+    expect(response.body).toEqual({
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Verificação de acesso indisponível.',
+      requestId: expect.any(String),
+    });
+    expect(JSON.stringify(response.body)).not.toContain('Authentication infrastructure');
+  });
+
+  it('mantém falhas de autenticação como 401', async () => {
+    const invalidTokenVerifier: AccessTokenVerifier = {
+      verify: async () => {
+        throw new Error('token signature failed');
+      },
+    };
+
+    const response = await request(createAuthApp(invalidTokenVerifier))
+      .get('/internal/auth/verify')
+      .set('Authorization', 'Bearer token')
+      .set('X-Original-Method', 'GET')
+      .expect(401);
+
+    expect(response.body).toEqual({
+      code: 'UNAUTHORIZED',
+      message: 'Token ausente ou inválido.',
+      requestId: expect.any(String),
+    });
   });
 
   it('permite leitura e exige permissão separada para escrita', async () => {
@@ -53,6 +103,10 @@ describe('verificação do subrequest do gateway', () => {
       .set('Authorization', 'Bearer token')
       .set('X-Original-Method', 'POST')
       .expect(403);
-    expect(denied.body.code).toBe('FORBIDDEN');
+    expect(denied.body).toEqual({
+      code: 'FORBIDDEN',
+      message: 'Permissão insuficiente.',
+      requestId: expect.any(String),
+    });
   });
 });

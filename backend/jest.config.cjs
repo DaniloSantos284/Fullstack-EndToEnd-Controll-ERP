@@ -30,4 +30,12 @@ module.exports = {
     '!<rootDir>/src/**/*.d.ts',
     '!<rootDir>/src/server.ts',
   ],
+  coverageThreshold: {
+    global: {
+      branches: 75,
+      functions: 95,
+      lines: 90,
+      statements: 90,
+    },
+  },
 };

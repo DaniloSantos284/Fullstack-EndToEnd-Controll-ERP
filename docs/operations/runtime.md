@@ -2,7 +2,7 @@
 
 ## Ambientes e comandos
 
-Use Node 22 LTS e pnpm 12.14.0. Em `backend/`, `corepack pnpm install --frozen-lockfile`, `corepack pnpm dev`, `corepack pnpm build`, `corepack pnpm start`, `corepack pnpm test:ci` e `corepack pnpm test:typecheck` cobrem o fluxo local. `corepack pnpm test:integration` precisa de um MySQL descartável com o schema inicializado e variáveis `DB_*`. Jest/Supertest substituem o pool por mocks; o teste de integração real verifica concorrência e rollback.
+Use Node 22 LTS, no intervalo `>=22.13.0 <23` declarado pelo backend; `.nvmrc` seleciona a linha 22 para desenvolvimento, e Dockerfile/CI selecionam a mesma linha explicitamente. Use pnpm 12.14.0 via Corepack. Em `backend/`, execute `corepack pnpm install --frozen-lockfile`, `corepack pnpm lint`, `corepack pnpm test:typecheck`, `corepack pnpm test:ci`, `corepack pnpm build`, `corepack pnpm audit --audit-level=high` e `corepack pnpm audit --prod --audit-level=high`. Jest exige globalmente 75% branches, 90% statements/lines e 95% functions. `corepack pnpm test:integration` precisa de um MySQL descartável com o schema inicializado e variáveis `DB_*`.
 
 Na raiz, copie `.env.example` para `.env`, defina `DB_ROOT_PASSWORD` e `DB_PASSWORD` com valores privados e inicie o desenvolvimento:
 
@@ -22,7 +22,7 @@ Para executar `pnpm --dir backend dev` fora do container, use um MySQL acessíve
 | `PORT` | Porta HTTP interna; 3333 fora do Compose, 4000 no container. |
 | `DB_HOST`, `PORT_DB`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | Conexão MySQL; no Compose, host `db` e porta interna `3306`. |
 | `DB_CONNECTION_LIMIT` | Máximo de conexões do pool; padrão 10. |
-| `JSON_BODY_LIMIT_KB` | Limite do corpo JSON; padrão 64 KiB. |
+| `JSON_BODY_LIMIT_KB` | Limite do corpo JSON; padrão 64 KiB. Com o overlay público, o mesmo valor é aplicado pelo Nginx. |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS` | Limite por IP na instância; padrão 60 s / 100. |
 | `TRUST_PROXY_HOPS` | Quantos proxies Express confia; padrão 0, gateway Compose usa 1. |
 | `SHUTDOWN_TIMEOUT_MS` | Prazo para fechar HTTP e pool; padrão 10 s. |
@@ -30,6 +30,8 @@ Para executar `pnpm --dir backend dev` fora do container, use um MySQL acessíve
 | `JWT_READ_SCOPE`, `JWT_WRITE_SCOPE` | Escopos esperados; padrões `inventory:read` e `inventory:write`. |
 
 O Compose exige `DB_ROOT_PASSWORD` e `DB_PASSWORD` não vazios; a senha root não é fornecida à API. `DB_PUBLISHED_PORT` só vale no overlay opcional e não altera `PORT_DB=3306` dentro da rede Docker. `dotenv/config` lê `.env` do diretório de trabalho quando o backend roda fora do Compose.
+
+O serviço `migrate` mantém uma trava nomeada do MySQL na mesma sessão durante a consulta do marker, a migration, a verificação do schema/dados e a gravação do marker. Assim, dois runners contra o mesmo banco se serializam; o segundo relê o marker após obter a trava. O timeout padrão é 120 segundos (`MYSQL_MIGRATION_LOCK_TIMEOUT`). Se o SQL tiver concluído antes de uma queda sem marker, o runner verifica os invariantes finais e registra a recuperação. Um estado parcialmente alterado que não seja nem legado compatível nem final verificado falha fechado e exige reparo/restauração manual. Isso não torna o DDL transacional: mantenha backup testado antes de executar a migration.
 
 ## Manutenção de versões MySQL
 
@@ -45,9 +47,9 @@ O Compose base não publica a API. `docker-compose.gateway.yml` adiciona Nginx e
 docker compose -f docker-compose.yml -f docker-compose.gateway.yml up --build --wait
 ```
 
-O frontend envia o JWT no header `Authorization: Bearer ...` ao Nginx. Para cada chamada `/api/`, `auth_request` chama `/internal/auth/verify` na rede privada. O verificador aceita `RS256` ou `ES256`, confere assinatura, emissor, audiência e expiração, e exige `inventory:read` em GET/HEAD ou `inventory:write` em POST. Nginx não encaminha o bearer token à rota de negócio. O gateway aplica um limite adicional por IP; para várias réplicas ou quotas por usuário, configure um mecanismo compartilhado na borda.
+O frontend envia o JWT no header `Authorization: Bearer ...` ao Nginx. Para cada chamada `/api/`, `auth_request` chama `/internal/auth/verify` na rede privada. O verificador aceita `RS256` ou `ES256`, confere assinatura, emissor, audiência e expiração, e exige `inventory:read` em GET/HEAD ou `inventory:write` em POST. Falha local de token retorna `401`, escopo retorna `403` e falha do provedor JWKS retorna `503` genérico quando uma busca ou atualização é necessária; chaves já conhecidas em cache podem continuar validando tokens. Nginx não encaminha o bearer token à rota de negócio; o E2E em Compose confirma a ausência desse header no processo da API. O gateway aplica um limite adicional por IP; para várias réplicas ou quotas por usuário, configure um mecanismo compartilhado na borda.
 
-Aplicação e gateway usam `Cache-Control: no-store`. Chamadas POST da API exigem `Content-Type: application/json`; media type ausente ou não JSON retorna `415` e ainda consome a quota do limitador.
+Aplicação e gateway usam `Cache-Control: no-store`; o gateway HTTPS também envia HSTS e aplica `JSON_BODY_LIMIT_KB` (64 KiB por padrão). Chamadas POST da API exigem `Content-Type: application/json`; media type ausente ou não JSON retorna `415` e ainda consome a quota do limitador. O `429` da aplicação inclui `Retry-After`; o `limit_req` do Nginx não promete esse header.
 
 Monte certificados TLS legíveis para o container do Nginx. Não acrescente `docker-compose.local.yml` ao comando público: esse overlay expõe a API em loopback e permite contornar `auth_request` a partir do host. Garanta que firewalls e orquestração não publiquem a porta interna 4000 ou `/internal/auth/verify`. O gateway publica somente `/api/`; liveness/readiness ficam na rede privada. A autenticação de usuários e a emissão de JWT são externas a este repositório.
 
@@ -59,8 +61,6 @@ Logs são linhas JSON com evento, status, duração e ID de requisição. Não i
 
 ## CI
 
-O workflow `.github/workflows/backend-ci.yml` roda em push e pull request com permissão somente de leitura. Ele instala pelo lockfile, executa auditoria crítica das dependências de produção, build, typecheck e Jest; valida o template Nginx e os overlays Compose; recria um schema legado, aplica `001_harden_inventory`, confere o saldo reconciliado e roda a integração MySQL. A execução do workflow é a evidência do caminho Docker, pois ele não substitui a validação local sem Engine disponível.
+O workflow `.github/workflows/backend-ci.yml` roda em Node 22 para push e pull request com permissão somente de leitura. Ele instala pelo lockfile, bloqueia vulnerabilidades `high`/`critical` no grafo completo e de produção, roda lint, build, typecheck, Jest e coverage; valida Nginx e os overlays Compose; recria schema legado, dispara dois runners de `001_harden_inventory`, confere o saldo reconciliado e roda a matriz real de migration (normal, rerun, failpoint antes do marker e timeout de lock) antes da integração MySQL.
 
-## Context7 no Codex
-
-O arquivo `.codex/config.toml` da raiz registra o MCP remoto do Context7. Ele não armazena chave: se `CONTEXT7_API_KEY` já estiver no ambiente do processo Codex, o cliente a encaminha como header; caso contrário, o endpoint remoto continua disponível sem credencial. Abra uma nova sessão do Codex para carregar a configuração de projeto. `codex mcp list` deve mostrar `context7`. Não copie a chave para `.env`, arquivos versionados ou comandos de diagnóstico.
+Depois, a CI sobe o mesmo gateway público com certificado temporário e `docker-compose.gateway-test.yml`. O serviço interno `gateway-tests` cria chave/JWKS e tokens efêmeros, passa pelo Nginx e verifica `401`, `403`, `503`, assinatura inválida, encaminhamento `200` e remoção real do bearer antes da API. Ele usa JWKS HTTP somente dentro da rede descartável e com `NODE_ENV=test`; produção exige JWKS HTTPS. A execução verde da workflow é a evidência obrigatória dos gates Docker.

@@ -5,6 +5,7 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:?Set the OIDC issuer}
       JWT_AUDIENCE: ${JWT_AUDIENCE:?Set the API audience}
       JWT_JWKS_URL: ${JWT_JWKS_URL:?Set the HTTPS JWKS URL}
+      JSON_BODY_LIMIT_KB: ${JSON_BODY_LIMIT_KB:-64}
       TRUST_PROXY_HOPS: 1
 
   gateway:
@@ -16,6 +17,7 @@ services:
     environment:
       PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?Set the public DNS name}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-}
+      JSON_BODY_LIMIT_KB: ${JSON_BODY_LIMIT_KB:-64}
     volumes:
       - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ${TLS_CERT_PATH:?Set the TLS certificate path}:/etc/nginx/tls/server.crt:ro

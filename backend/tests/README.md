@@ -14,12 +14,17 @@ Execute no diretório `backend/` após `corepack pnpm install --frozen-lockfile`
 | `corepack pnpm test:ci` | Executa Jest sequencialmente, em modo CI, com cobertura. |
 | `corepack pnpm test:typecheck` | Confere tipos de fontes e testes sem emitir arquivos. |
 | `corepack pnpm test:integration` | Executa a verificação contra MySQL real; exige banco descartável configurado. |
+| `corepack pnpm test:gateway` | Executor interno do E2E Nginx; deve ser chamado pelo serviço Compose `gateway-tests`, não diretamente no host. |
 
 ## Escopo coberto
 
 As suítes em `tests/unit/` exercitam invariantes de domínio, regras de estoque, preço e o repositório transacional simulado. As suítes em `tests/http/` cobrem contratos de produto, paginação, erros, request ID, healthchecks, autenticação de gateway, rate limit, `Cache-Control: no-store` e media type JSON.
 
 `tests/integration/mysql-stock.ts` não é carregado pelo Jest. Ele abre uma conexão MySQL real, verifica concorrência de saídas, rollback após falha de insert, paginação e preço; a CI também o executa depois de aplicar a migração em um schema legado.
+
+`../db/migrations/tests/migrate.sh` é a matriz real do runner de migration e roda dentro do container `migrate` na CI. Ela cobre aplicação normal, rerun, failpoint após o SQL e antes do marker, recuperação verificada e timeout da trava MySQL; o job também inicia dois runners normais em paralelo.
+
+`tests/integration/nginx-gateway.ts` também não é carregado pelo Jest. O overlay `docker-compose.gateway-test.yml` executa-o dentro da rede Docker: ele cria JWKS e tokens efêmeros, percorre HTTPS Nginx e `auth_request`, e valida `503` sem JWKS, `401` para tokens inválidos, `403` para escopo insuficiente e `200` com escopo de leitura. Não há chaves privadas estáticas ou provedor externo.
 
 ## Isolamento
 

@@ -39,10 +39,13 @@ jobs:
           corepack prepare pnpm@12.14.0 --activate
       - name: Install
         run: pnpm --dir backend install --frozen-lockfile
+      - name: Audit all dependencies
+        run: pnpm --dir backend audit --audit-level=high
       - name: Audit production dependencies
-        run: pnpm --dir backend audit --prod --audit-level=critical
-      - name: Build and typecheck
+        run: pnpm --dir backend audit --prod --audit-level=high
+      - name: Lint, build and typecheck
         run: |
+          pnpm --dir backend lint
           pnpm --dir backend build
           pnpm --dir backend test:typecheck
       - name: Test
@@ -60,11 +63,23 @@ jobs:
             -e FRONTEND_ORIGIN=https://app.example.test \
             -v "$PWD/deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             -v "$cert_dir:/etc/nginx/tls:ro" \
-            nginx:stable-alpine nginx -t
+            nginx:stable-alpine /bin/sh -ec '
+              nginx -t
+              rendered_config="$(nginx -T 2>&1)"
+              case "$rendered_config" in
+                *proxy_set_header\ Authorization\ \"\"\;*) ;;
+                *) exit 1 ;;
+              esac
+              case "$rendered_config" in
+                *auth_request_set\ \$auth_request_status\ \$upstream_status\;*) ;;
+                *) exit 1 ;;
+              esac
+            '
       - name: Validate Compose overlays
         run: |
           docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.gateway.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml config --quiet
       - name: Start disposable MySQL only
         run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --wait db
       - name: Load legacy schema and stock history
@@ -88,7 +103,19 @@ jobs:
                 ('00000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000001', 'out', 5);
             "
       - name: Run inventory hardening migration
-        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up --no-deps --exit-code-from migrate migrate
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml run --no-deps --rm migrate &
+          first_migration_pid=$!
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml run --no-deps --rm migrate &
+          second_migration_pid=$!
+          first_migration_status=0
+          second_migration_status=0
+          wait "$first_migration_pid" || first_migration_status=$?
+          wait "$second_migration_pid" || second_migration_status=$?
+          if [ "$first_migration_status" -ne 0 ] || [ "$second_migration_status" -ne 0 ]; then
+            exit 1
+          fi
       - name: Verify migrated legacy inventory
         shell: bash
         run: |
@@ -102,6 +129,16 @@ jobs:
             mysql --protocol=socket --user=root --database="$DB_DATABASE" --batch --skip-column-names \
             --execute "SELECT quantity FROM products WHERE id = '00000000-0000-4000-8000-000000000001';")"
           test "$reconciled_quantity" = '7'
+      - name: Test inventory migration script
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.db-port.yml run --rm --no-deps \
+            --entrypoint /bin/sh \
+            -e MYSQL_TEST_HOST=db \
+            -e MYSQL_TEST_PORT=3306 \
+            -e MYSQL_TEST_USER="$DB_USER" \
+            -e MYSQL_TEST_PASSWORD="$DB_PASSWORD" \
+            -e MYSQL_TEST_DATABASE="$DB_DATABASE" \
+            migrate /migrations/tests/migrate.sh
       - name: Start API after successful migration
         run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --no-deps --build --wait api
       - name: Test real MySQL transactions
@@ -110,12 +147,32 @@ jobs:
           DB_HOST: 127.0.0.1
           PORT_DB: '3307'
         run: pnpm --dir backend test:integration
+      - name: Test HTTPS Nginx gateway with ephemeral JWKS
+        shell: bash
+        run: |
+          cert_dir="$(mktemp -d)"
+          trap 'rm -rf "$cert_dir"' EXIT
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt" \
+            -days 1 -subj '/CN=gateway.test' >/dev/null 2>&1
+          gateway_compose() {
+            TLS_CERT_PATH="$cert_dir/server.crt" TLS_KEY_PATH="$cert_dir/server.key" \
+              docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml "$@"
+          }
+          gateway_compose up -d --no-deps --build --force-recreate --wait api
+          gateway_compose up -d --no-deps --wait gateway
+          gateway_compose up --build --no-deps --abort-on-container-exit --exit-code-from gateway-tests gateway-tests
       - name: Show service diagnostics on failure
         if: failure()
         shell: bash
         run: |
           docker compose -f docker-compose.yml -f docker-compose.db-port.yml ps || true
           docker compose -f docker-compose.yml -f docker-compose.db-port.yml logs --no-color || true
+          docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml ps || true
+          docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml logs --no-color || true
+      - name: Stop gateway test services
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml down --volumes --remove-orphans
       - name: Stop disposable services
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml down --volumes --remove-orphans

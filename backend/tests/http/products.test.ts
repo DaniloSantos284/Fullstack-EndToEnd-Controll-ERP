@@ -63,12 +63,93 @@ describe('API de produtos com Supertest', () => {
     expect(databaseMock.execute).not.toHaveBeenCalled();
   });
 
+  it('aceita o limite de offset com o limit padrão', async () => {
+    databaseMock.execute.mockResolvedValueOnce([[], []]);
+
+    const response = await createHttpClient()
+      .get('/api/products?page=501')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      data: [],
+      pagination: { page: 501, limit: 20, hasNext: false },
+    });
+    expect(databaseMock.execute).toHaveBeenCalledTimes(1);
+    expect(databaseMock.execute.mock.calls[0]?.[0]).toMatch(/ORDER BY id ASC[\s\S]*LIMIT \? OFFSET \?/i);
+    expect(databaseMock.execute.mock.calls[0]?.[1]).toEqual([21, 10_000]);
+  });
+
+  it('rejeita offset acima do limite com o limit padrão antes de consultar o banco', async () => {
+    const response = await createHttpClient()
+      .get('/api/products?page=502')
+      .expect(400);
+
+    expect(response.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(databaseMock.execute).not.toHaveBeenCalled();
+  });
+
+  it('aceita o limite de offset com limit customizado', async () => {
+    databaseMock.execute.mockResolvedValueOnce([[], []]);
+
+    const response = await createHttpClient()
+      .get('/api/products?page=101&limit=100')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      data: [],
+      pagination: { page: 101, limit: 100, hasNext: false },
+    });
+    expect(databaseMock.execute).toHaveBeenCalledTimes(1);
+    expect(databaseMock.execute.mock.calls[0]?.[1]).toEqual([101, 10_000]);
+  });
+
+  it('rejeita offset acima do limite com limit customizado antes de consultar o banco', async () => {
+    const response = await createHttpClient()
+      .get('/api/products?page=102&limit=100')
+      .expect(400);
+
+    expect(response.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(databaseMock.execute).not.toHaveBeenCalled();
+  });
+
+  it('rejeita o mesmo offset em movimentos antes de consultar o banco', async () => {
+    const response = await createHttpClient()
+      .get(`/api/products/${productId}/movements?page=102&limit=100`)
+      .expect(400);
+
+    expect(response.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(databaseMock.execute).not.toHaveBeenCalled();
+  });
+
+  it('aceita o limite de offset em movimentos', async () => {
+    databaseMock.execute
+      .mockResolvedValueOnce([[productRow], []])
+      .mockResolvedValueOnce([[], []]);
+
+    const response = await createHttpClient()
+      .get(`/api/products/${productId}/movements?page=101&limit=100`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      data: [],
+      pagination: { page: 101, limit: 100, hasNext: false },
+    });
+    expect(databaseMock.execute).toHaveBeenCalledTimes(2);
+    expect(databaseMock.execute.mock.calls[1]?.[1]).toEqual([productId, 101, 10_000]);
+  });
+
   it('cria produto com preço decimal exato', async () => {
     databaseMock.execute.mockResolvedValueOnce([{ affectedRows: 1 }, []]);
 
     const response = await createHttpClient()
       .post('/api/products')
-      .send({ name: 'Caderno', price: 12.5, category: 'OFFICE', imageUrl: '', barCode: '' })
+      .send({
+        name: 'Caderno',
+        price: 12.5,
+        category: 'OFFICE',
+        imageUrl: 'https://cdn.example.test/caderno.png',
+        barCode: '',
+      })
       .expect(201);
 
     expect(response.body).toMatchObject({
@@ -76,13 +157,58 @@ describe('API de produtos com Supertest', () => {
       name: 'Caderno',
       price: 12.5,
       category: 'OFFICE',
-      imageUrl: '',
+      imageUrl: 'https://cdn.example.test/caderno.png',
       barCode: '',
     });
     expect(databaseMock.execute).toHaveBeenCalledTimes(1);
     expect(databaseMock.execute.mock.calls[0]?.[0]).toMatch(/INSERT INTO products/i);
     expect(databaseMock.execute.mock.calls[0]?.[1]?.[3]).toBe('12.50');
-    expect(databaseMock.execute.mock.calls[0]?.[1]?.slice(5)).toEqual(['', '']);
+    expect(databaseMock.execute.mock.calls[0]?.[1]?.slice(5)).toEqual([
+      'https://cdn.example.test/caderno.png', '',
+    ]);
+  });
+
+  it('aceita URL HTTP de imagem', async () => {
+    databaseMock.execute.mockResolvedValueOnce([{ affectedRows: 1 }, []]);
+
+    await createHttpClient()
+      .post('/api/products')
+      .send({
+        name: 'Caneta',
+        price: 2,
+        category: 'OFFICE',
+        imageUrl: 'http://cdn.example.test/caneta.png',
+      })
+      .expect(201);
+
+    expect(databaseMock.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserva imageUrl vazia como valor opcional aceito', async () => {
+    databaseMock.execute.mockResolvedValueOnce([{ affectedRows: 1 }, []]);
+
+    const response = await createHttpClient()
+      .post('/api/products')
+      .send({ name: 'Sem imagem', price: 2, category: 'OFFICE', imageUrl: '' })
+      .expect(201);
+
+    expect(response.body).toMatchObject({ imageUrl: '' });
+    expect(databaseMock.execute.mock.calls[0]?.[1]?.[5]).toBe('');
+  });
+
+  it.each([
+    ['javascript', 'javascript:alert(1)'],
+    ['data', 'data:image/png;base64,AAAA'],
+    ['malformada', 'http://'],
+    ['acima do limite', `https://cdn.example.test/${'a'.repeat(500)}`],
+  ])('rejeita URL de imagem %s', async (_description, imageUrl) => {
+    const response = await createHttpClient()
+      .post('/api/products')
+      .send({ name: 'Caderno', price: 12.5, category: 'OFFICE', imageUrl })
+      .expect(400);
+
+    expect(response.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(databaseMock.execute).not.toHaveBeenCalled();
   });
 
   it('inclui histórico paginado nos detalhes sem alterar o saldo materializado', async () => {

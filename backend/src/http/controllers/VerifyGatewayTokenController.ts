@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import type { AccessTokenVerifier } from "../../application/security/AccessTokenVerifier";
+import { AuthenticationInfrastructureError } from "../../application/security/AuthenticationInfrastructureError";
 import { HttpError } from "../errors/HttpError";
 
 export class VerifyGatewayTokenController {
@@ -11,7 +12,7 @@ export class VerifyGatewayTokenController {
 
   async handle(req: Request, res: Response): Promise<Response> {
     if (!this.verifier) {
-      throw new HttpError("Verificação de acesso indisponível.", 503, "SERVICE_UNAVAILABLE");
+      throw this.serviceUnavailable();
     }
 
     const authorization = req.header("Authorization");
@@ -36,7 +37,10 @@ export class VerifyGatewayTokenController {
     let scopes: ReadonlySet<string>;
     try {
       ({ scopes } = await this.verifier.verify(token));
-    } catch {
+    } catch (error) {
+      if (error instanceof AuthenticationInfrastructureError) {
+        throw this.serviceUnavailable();
+      }
       throw new HttpError("Token ausente ou inválido.", 401, "UNAUTHORIZED");
     }
     if (!scopes.has(requiredScope)) {
@@ -44,5 +48,9 @@ export class VerifyGatewayTokenController {
     }
 
     return res.status(204).end();
+  }
+
+  private serviceUnavailable(): HttpError {
+    return new HttpError("Verificação de acesso indisponível.", 503, "SERVICE_UNAVAILABLE");
   }
 }

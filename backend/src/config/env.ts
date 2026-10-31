@@ -29,6 +29,7 @@ const envSchema = z.object({
   JWT_JWKS_URL: optionalConfiguredUrl,
   JWT_READ_SCOPE: z.string().trim().min(1).default("inventory:read"),
   JWT_WRITE_SCOPE: z.string().trim().min(1).default("inventory:write"),
+  GATEWAY_TEST_AUTHORIZATION_PROBE: z.literal("true").optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -67,4 +68,6 @@ export const env = {
   jwtJwksUrl: parsed.data.JWT_JWKS_URL,
   jwtReadScope: parsed.data.JWT_READ_SCOPE,
   jwtWriteScope: parsed.data.JWT_WRITE_SCOPE,
+  gatewayTestAuthorizationProbe:
+    parsed.data.NODE_ENV === "test" && parsed.data.GATEWAY_TEST_AUTHORIZATION_PROBE === "true",
 };

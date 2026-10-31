@@ -4,7 +4,7 @@ Serviço HTTP de estoque em Express e TypeScript. Ele é executado como processo
 
 ## Pré-requisitos
 
-- Node.js 22 LTS (a mesma linha usada no Dockerfile e na CI).
+- Node.js 22 LTS, versão `>=22.13.0 <23` (`nvm use` lê `.nvmrc`; Dockerfile e CI selecionam a mesma linha 22 explicitamente).
 - Corepack habilitado para usar pnpm 12.14.0.
 - MySQL 9.7 para execução fora do Docker, ou Docker Engine com Compose para subir o ambiente descartável.
 
@@ -41,6 +41,16 @@ Variáveis de JWT são necessárias somente para o endpoint interno usado pelo g
 
 ## Banco e migrações
 
+Para um ambiente descartável já configurado com credenciais fictícias, use o arquivo `.env.mock` da raiz em vez de criar `.env`:
+
+```bash
+cd ..
+docker compose --env-file .env.mock -f docker-compose.yml -f docker-compose.db-port.yml up -d --build --wait
+cd backend
+```
+
+Ele não deve ser usado fora de desenvolvimento/testes. Para configurar senhas próprias, siga o fluxo abaixo.
+
 Para subir o MySQL local e disponibilizá-lo para o processo Node:
 
 ```bash
@@ -51,7 +61,7 @@ docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --build
 cd backend
 ```
 
-Um volume novo recebe `db/init.sql`. Em um volume criado antes do hardening, o serviço `migrate` aplica `001_harden_inventory` uma vez, após validar e reconciliar o saldo com o histórico. Faça backup antes de migrar qualquer volume relevante: DDL MySQL não é transacional.
+Um volume novo recebe `db/init.sql`. Em um volume criado antes do hardening, o serviço `migrate` aplica `001_harden_inventory` uma vez, após validar e reconciliar o saldo com o histórico. Execuções concorrentes são serializadas por uma trava nomeada mantida na mesma sessão MySQL; a segunda relê o marker e encerra sem reaplicar o DDL. Após uma queda antes do marker, o runner registra a recuperação somente se schema e dados já satisfizerem os invariantes finais; um estado parcial falha fechado para reparo/restauração manual. O tempo máximo de espera é 120 segundos (`MYSQL_MIGRATION_LOCK_TIMEOUT`). Faça backup antes de migrar qualquer volume relevante: DDL MySQL não é transacional.
 
 Para executar somente a migração contra um banco já iniciado pelo Compose:
 
@@ -89,10 +99,12 @@ Esse comando requer `DB_ROOT_PASSWORD`, `DB_PASSWORD`, `JWT_ISSUER`, `JWT_AUDIEN
 ## Testes e validações
 
 ```bash
+corepack pnpm lint
 corepack pnpm test:ci
 corepack pnpm test:typecheck
 corepack pnpm build
-corepack pnpm audit --prod --audit-level=critical
+corepack pnpm audit --audit-level=high
+corepack pnpm audit --prod --audit-level=high
 ```
 
 `test:ci` executa testes unitários e HTTP com Jest/Supertest e gera cobertura. Eles usam pool MySQL simulado. `test:integration` exige um MySQL descartável real já inicializado:
@@ -106,6 +118,22 @@ NODE_ENV=test DB_HOST=127.0.0.1 PORT_DB=3307 \
   corepack pnpm test:integration
 ```
 
-O teste de integração verifica concorrência de saída, rollback, paginação e preço contra o banco real. A CI também recria um schema anterior à migração, aplica `001_harden_inventory` e verifica seu marker e saldo reconciliado antes desse teste.
+O teste de integração verifica concorrência de saída, rollback, paginação e preço contra o banco real. A CI também recria um schema anterior à migração, exercita normal/rerun/failpoint/timeout e dois runners concorrentes de `001_harden_inventory`, então verifica marker e saldo reconciliado antes desse teste.
+
+O gateway tem E2E próprio no overlay `docker-compose.gateway-test.yml`. Ele deve rodar em Docker porque o executor precisa alcançar o hostname interno `gateway`; a CI é a referência. Em um host Docker, gere certificados temporários e execute:
+
+```bash
+cd ..
+cert_dir="$(mktemp -d)"
+trap 'rm -rf "$cert_dir"' EXIT
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt" \
+  -days 1 -subj '/CN=gateway.test'
+TLS_CERT_PATH="$cert_dir/server.crt" TLS_KEY_PATH="$cert_dir/server.key" \
+  docker compose --env-file .env.mock -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml \
+    up --build --abort-on-container-exit --exit-code-from gateway-tests gateway-tests
+```
+
+O executor usa chave e JWKS efêmeros, testa `401`, `403`, `503`, assinatura inválida, encaminhamento `200` e confirma que o bearer público não chega à aplicação. Seu JWKS HTTP é restrito à rede descartável e `NODE_ENV=test`. Produção continua exigindo JWKS HTTPS.
 
 Detalhes de HTTP, segurança, variáveis e operação estão em [`../docs/`](../docs/README.md). A documentação específica da suíte está em [`tests/README.md`](tests/README.md).

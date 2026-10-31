@@ -1,0 +1,28 @@
+services:
+  api:
+    environment:
+      NODE_ENV: test
+      JWT_ISSUER: https://gateway-test-issuer.invalid
+      JWT_AUDIENCE: gateway-test-api
+      JWT_JWKS_URL: http://gateway-tests:4100/jwks
+      GATEWAY_TEST_AUTHORIZATION_PROBE: "true"
+
+  gateway:
+    environment:
+      PUBLIC_HOSTNAME: gateway.test
+      FRONTEND_ORIGIN: https://app.gateway.test
+
+  gateway-tests:
+    build:
+      context: ./backend
+      target: build
+    command: ["pnpm", "test:gateway"]
+    environment:
+      GATEWAY_URL: https://gateway:443
+      FRONTEND_ORIGIN: https://app.gateway.test
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - internal
