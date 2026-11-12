@@ -23,7 +23,7 @@ Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gatewa
 
 `name` tem 1 a 255 caracteres após remoção de espaços nas bordas; `imageUrl` aceita string vazia para compatibilidade ou URL `http:`/`https:` de até 500 caracteres. Esquemas como `javascript:` e `data:` são rejeitados. `barCode` tem até 100 caracteres. Valores extras ou tipos incorretos são rejeitados. Categorias: `FOOD`, `ELECTRONICS`, `CLOTHING`, `CLEANING`, `OFFICE`, `OTHER`.
 
-`GET /api/products/:id?page=1&limit=20` retorna `200` com os campos do produto, `barCode` quando presente, `quantity`, `movements` e `movementsPagination`. `page` e `limit` paginam apenas `movements`, não o produto. Produto inexistente retorna `404`.
+`GET /api/products/:id?page=1&limit=20` retorna `200` com os campos do produto, `barCode` quando presente, `quantity`, `movements` e `movementsPagination`. Os itens incorporados em `movements` têm a mesma forma da rota de movimentos, incluindo `productId`. `page` e `limit` paginam apenas `movements`, não o produto. Produto inexistente retorna `404`.
 
 ## Estoque
 
@@ -33,7 +33,7 @@ Base: `/api`. As respostas da aplicação são JSON; recusas geradas pelo gatewa
 
 ## Erros e proteção
 
-Formato de erro: `{ "code": "VALIDATION_ERROR", "message": "Dados da requisição inválidos.", "requestId": "..." }`. O header `X-Request-Id` tem o mesmo valor. Respostas não incluem stack, SQL, headers sensíveis nem segredos.
+Erros gerados pela aplicação usam `{ "code": "VALIDATION_ERROR", "message": "Dados da requisição inválidos.", "requestId": "..." }`. O header `X-Request-Id` tem o mesmo valor. Respostas não incluem stack, SQL, headers sensíveis nem segredos. Erros gerados pelo próprio Nginx (rota ausente, limite de borda ou falha do `auth_request`) usam `{code,message}` e não prometem `requestId` nem `X-Request-Id`.
 
 | Status | Situação |
 | --- | --- |
@@ -45,6 +45,20 @@ Formato de erro: `{ "code": "VALIDATION_ERROR", "message": "Dados da requisiçã
 | 429 | Limite local da aplicação excedido; inclui `Retry-After`. O limite de borda do Nginx também pode responder `429`, sem prometer esse header. |
 | 503 | Banco, JWKS/provedor de autenticação reconhecidamente indisponível ou readiness negativa. |
 | 500 | Falha inesperada, com mensagem genérica. |
+
+| Código da aplicação | Status | Origem típica |
+| --- | --- | --- |
+| `VALIDATION_ERROR`, `BAD_REQUEST`, `INVALID_JSON`, `INVALID_REQUEST_BODY` | 400 | Validação de domínio/esquema, caso de uso ou parser HTTP. |
+| `NOT_FOUND`, `ROUTE_NOT_FOUND` | 404 | Produto ou rota ausente. |
+| `CONFLICT` | 409 | Regra de estoque. |
+| `PAYLOAD_TOO_LARGE` | 413 | Limite de corpo. |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | `Content-Type`, charset ou codificação incompatível. |
+| `RATE_LIMIT_EXCEEDED` | 429 | Limitador local. |
+| `SERVICE_UNAVAILABLE` | 503 | Banco, JWKS ou readiness indisponível. |
+| `INTERNAL_ERROR` | 500 | Falha inesperada. |
+| `APPLICATION_ERROR` | variável | Fallback de um erro de aplicação sem código específico. |
+
+O endpoint interno de verificação do gateway também pode emitir `UNAUTHORIZED` (401) e `FORBIDDEN` (403); ele não é publicado pelo Nginx.
 
 Helmet define headers de proteção. O limitador em memória cobre `/api` por endereço IP e só é global para uma instância; o gateway precisa impor limite compartilhado no ambiente público. Por padrão, apenas o endereço do socket é confiável (`TRUST_PROXY_HOPS=0`).
 
@@ -61,4 +75,4 @@ O Nginx é configurado para publicar somente `/api/`. Seu subrequest interno cha
 
 Esse endpoint não deve ser publicado pelo gateway. O provedor OIDC que emitirá os JWTs ainda não foi escolhido; a implantação pública exige `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_JWKS_URL` válidos.
 
-O gateway aplica o mesmo `JSON_BODY_LIMIT_KB` da aplicação (64 KiB por padrão), envia HSTS em HTTPS e remove o bearer antes de encaminhar a rota de negócio. O E2E em Compose confirma essa remoção no processo da API. Ele responde a `OPTIONS /api/` com `204` e permite apenas os métodos `GET`, `HEAD` e `POST`, com headers `Authorization` e `Content-Type`, para a origem configurada. O preflight não alcança o verificador JWT; chamadas de negócio continuam exigindo token. Sem `FRONTEND_ORIGIN`, não há acesso CORS a partir de outra origem.
+O gateway aplica o mesmo `JSON_BODY_LIMIT_KB` da aplicação (64 KiB por padrão), envia HSTS em HTTPS e remove o bearer antes de encaminhar a rota de negócio. O E2E em Compose confirma essa remoção no processo da API. Ele responde ao preflight `OPTIONS /api/` com `204` e anuncia `GET`, `HEAD`, `POST` e `OPTIONS`, com headers `Authorization` e `Content-Type`, para a origem configurada; somente GET/HEAD/POST são chamadas de negócio. O preflight não alcança o verificador JWT; chamadas de negócio continuam exigindo token. Sem `FRONTEND_ORIGIN`, não há acesso CORS a partir de outra origem.

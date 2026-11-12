@@ -8,6 +8,7 @@
 | Decisões técnicas e limites | [Decisões](architecture/decisions.md) |
 | Invariantes de estoque | [Domínio](domain/inventory.md) |
 | Schema e migração | [MySQL](data/mysql.md) |
+| Plano de migrations, privilégios e entrega reproduzível | [Rota 1](data/evolucao-segura-e-entrega-reprodutivel.md) |
 | Variáveis, containers e gateway | [Operação](operations/runtime.md) |
 | Instalação, banco, execução e testes do serviço | [README do backend](../backend/README.md) |
 | Estratégia e comandos da suíte de testes | [README dos testes](../backend/tests/README.md) |

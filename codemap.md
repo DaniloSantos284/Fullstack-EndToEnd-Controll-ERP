@@ -8,7 +8,6 @@
 - [`docker-compose.gateway.yml`](docker-compose.gateway.yml): Nginx público com TLS e `auth_request` contra a verificação JWT interna.
 - [`docker-compose.db-port.yml`](docker-compose.db-port.yml): publicação local opcional do banco.
 - [`.github/workflows/backend-ci.yml`](.github/workflows/backend-ci.yml): build, tipos, Jest/Supertest, integração MySQL e whitespace.
-- [`.codex/config.toml`](.codex/config.toml): MCP Context7 remoto com header opcional vindo do ambiente, sem chave no repositório.
 - [`.gitattributes`](.gitattributes): mantém o executor de migração com LF para Linux.
 - [`docs/`](docs/README.md): contratos, arquitetura, dados, operação e estado da branch.
 

@@ -12,14 +12,14 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up --build --wa
 
 A API fica em `127.0.0.1:${PORT_APP:-4000}`. O banco não publica porta. Se precisar acessar MySQL no host, acrescente `-f docker-compose.db-port.yml`; a porta fica em `127.0.0.1:${DB_PUBLISHED_PORT:-3307}`. `docker compose down` preserva o volume; `down --volumes` apaga o banco e deve ser usado apenas em ambiente descartável.
 
-Para executar `pnpm --dir backend dev` fora do container, use um MySQL acessível no host (por exemplo, o overlay `docker-compose.db-port.yml`) e configure `backend/.env` com `DB_HOST=127.0.0.1`, `PORT_DB=3307`, `DB_USER`, `DB_PASSWORD` e `DB_DATABASE`. Esse arquivo é ignorado pelo Git. Não use a porta 4000 simultaneamente para o processo local e o container `api`.
+Para executar `pnpm --dir backend dev` fora do container, use um MySQL acessível no host (por exemplo, o overlay `docker-compose.db-port.yml`) e configure `backend/.env` com `DB_HOST=127.0.0.1`, `PORT_DB=3307`, `DB_USER`, `DB_PASSWORD` e `DB_DATABASE`. Esse arquivo é ignorado pelo Git. O processo local usa a porta 3333 por padrão; se você a sobrescrever para 4000, não a use simultaneamente com o container `api`.
 
 ## Variáveis da API
 
 | Nome | Uso / padrão |
 | --- | --- |
 | `NODE_ENV` | `development`, `test` ou `production`. |
-| `PORT` | Porta HTTP interna; 3333 fora do Compose, 4000 no container. |
+| `PORT` | Porta HTTP interna; 3333 no processo local e 4000 na imagem/Compose. |
 | `DB_HOST`, `PORT_DB`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | Conexão MySQL; no Compose, host `db` e porta interna `3306`. |
 | `DB_CONNECTION_LIMIT` | Máximo de conexões do pool; padrão 10. |
 | `JSON_BODY_LIMIT_KB` | Limite do corpo JSON; padrão 64 KiB. Com o overlay público, o mesmo valor é aplicado pelo Nginx. |

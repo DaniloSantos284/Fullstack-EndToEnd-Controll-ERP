@@ -1,8 +1,8 @@
-# Estado de `feat/api-hardening`
+# Registro histórico de `feat/api-hardening`
 
-Este documento registra o estado de remediação antes do commit final. A revisão deve ocorrer sobre um SHA que inclua atomicamente os arquivos de hardening; não confunda alterações locais não commitadas com `e60f9fc`. Docker Desktop foi ativado no WSL2 e os gates locais de containers foram executados em um projeto Compose isolado, sem tocar nos serviços existentes.
+Este documento preserva o estado da remediação antes do commit final. O trabalho foi integrado no merge `9d8b416`; não use este registro para inferir o estado atual da árvore, das dependências ou das validações. Docker Desktop foi ativado no WSL2 e os gates locais de containers foram executados em um projeto Compose isolado, sem tocar nos serviços existentes.
 
-## Escopo implementado no working tree
+## Escopo histórico implementado
 
 ### Dependências, runtime e qualidade
 
@@ -43,7 +43,7 @@ Este documento registra o estado de remediação antes do commit final. A revis�
 - Ela valida Nginx renderizado, todos os overlays Compose relevantes, fixture/migration legada, integração MySQL e o gateway E2E com certificado temporário/JWKS efêmero.
 - `backend/README.md`, `docs/api/http-api.md` e `docs/operations/runtime.md` foram alinhados com runtime, gateway, migration, limites e comandos de operação.
 
-## Validações locais concluídas
+## Validações locais históricas
 
 | Verificação | Resultado |
 | --- | --- |
@@ -56,16 +56,15 @@ Este documento registra o estado de remediação antes do commit final. A revis�
 | MySQL 9.7 em Docker | Passou: matriz de migration, dois runners normais concorrentes, healthcheck da API e integração real. |
 | HTTPS Nginx em Docker | Passou: gateway/JWKS efêmero, `401`/`403`/`503`, leitura/escrita autorizadas e remoção do bearer. |
 
-## Gate restante
+## Gate que restava à época
 
-O workflow GitHub Actions deve rodar no SHA final criado após esta remediação. Ele repete os gates Docker locais com Node 22 e é a evidência de CI para o commit final.
+O workflow GitHub Actions deveria rodar no SHA final criado após aquela remediação. Uma validação atual deve sempre executar novamente os gates aplicáveis no código atual.
 
-## Estado de versionamento e cuidados de continuidade
+## Notas históricas de versionamento
 
-- O working tree já estava sujo no início. Não executar `git reset --hard`, `git clean`, stash abrangente ou sobrescrever mudanças sem revisão.
-- Mudanças necessárias ainda estão não commitadas. Arquivos novos indispensáveis a incluir em eventual commit: `.env.mock` (valores fictícios), `.nvmrc`, `backend/eslint.config.mjs`, `backend/src/application/security/AuthenticationInfrastructureError.ts`, `backend/tests/integration/nginx-gateway.ts`, `backend/tests/unit/env.test.ts` e `docker-compose.gateway-test.yml`.
-- `.ignore` é untracked e não relacionado; não deve entrar no commit. `.slim/deepwork/` é progresso local ignorado e também não é artefato de entrega.
-- Antes de criar um commit, revisar e stagear somente os arquivos de hardening. Nenhum commit/push/merge foi solicitado ou realizado nesta sessão.
+- A árvore de trabalho estava suja no início daquela sessão; esse fato não descreve a árvore atual.
+- Os arquivos então listados como pendentes foram posteriormente versionados no merge de `feat/api-hardening`.
+- Qualquer arquivo não rastreado atual deve ser revisado independentemente; esta seção não determina o que deve entrar em um novo commit.
 
 ## Comandos de revisão
 

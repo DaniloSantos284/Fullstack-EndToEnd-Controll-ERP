@@ -7,7 +7,7 @@
 Invariantes:
 
 - Nome não vazio, até 255 caracteres; categoria em `FOOD`, `ELECTRONICS`, `CLOTHING`, `CLEANING`, `OFFICE` ou `OTHER`.
-- Preço entre 0 e 99.999.999,99, com até dois decimais. O domínio usa centavos inteiros e não faz cálculos com o preço em ponto flutuante.
+- Preço entre 0 e 99.999.999,99, com até dois decimais. Saldo e preço persistido usam centavos inteiros; ponto flutuante aparece apenas na validação/conversão da entrada (`price * 100` com tolerância de `EPSILON`), nunca na aritmética de saldo.
 - Quantidade e saldo inteiros de 0 a 2.147.483.647; cada movimento tem quantidade de 1 a 2.147.483.647.
 - Uma saída não pode tornar o saldo negativo. Uma entrada não pode exceder o máximo da coluna MySQL.
 - `products.quantity` é a fonte de verdade para leituras; movimentos preservam o histórico. Uma transação mantém ambos sincronizados para comandos da API.

@@ -12,7 +12,7 @@ API REST de produtos e movimentações de estoque, escrita em Node.js, Express, 
 
 ## Início rápido com Docker
 
-Pré-requisitos: Docker Engine com o plugin Compose.
+Pré-requisitos: Docker Engine com o plugin Compose v2 e OpenSSL. Em WSL2, habilite a integração da distribuição no Docker Desktop (Settings → Resources → WSL Integration) ou instale o Docker Engine na própria distribuição; confirme com `docker version` e `docker compose version`. Clone o repositório no filesystem Linux (por exemplo, `~/projetos`), não em `/mnt/c`, para evitar problemas de bind mount e permissões.
 
 ```bash
 cp .env.example .env
@@ -21,6 +21,8 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up --build --wa
 ```
 
 O overlay `docker-compose.local.yml` expõe a API apenas em `127.0.0.1:${PORT_APP:-4000}`. O Compose base não publica portas. Para publicar MySQL localmente em `127.0.0.1:${DB_PUBLISHED_PORT:-3307}`, acrescente `-f docker-compose.db-port.yml`.
+
+Antes de iniciar, confira conflitos nas portas 4000, 3307 e 443: `ss -ltnp | grep -E ':(4000|3307|443)\\b'`. Após criar o arquivo de ambiente, restrinja suas permissões com `chmod 600 .env`. Os scripts de migração exigem final de linha LF, já aplicado por `.gitattributes`.
 
 Consulte o [guia do backend](backend/README.md) para configuração sem Docker, migrações, testes e produção.
 
