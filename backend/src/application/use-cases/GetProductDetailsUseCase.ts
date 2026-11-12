@@ -7,6 +7,7 @@ import { Pagination, paginate } from "../pagination";
 
 type StockMovementOutput = {
   id: string;
+  productId: string;
   type: StockMovementType;
   quantity: number;
   createdAt: Date;
@@ -34,7 +35,7 @@ export class GetProductDetailsUseCase {
     const product = await this.productRepository.findById(productId);
 
     if (!product) {
-      throw new AppError("Product not found", 404);
+      throw new AppError("Produto não encontrado.", 404);
     }
 
     const movements = paginate(
@@ -52,6 +53,7 @@ export class GetProductDetailsUseCase {
       quantity: product.quantity,
       movements: movements.data.map(movement => ({
         id: movement.id,
+        productId: movement.productId,
         type: movement.type,
         quantity: movement.quantity,
         createdAt: movement.createdAt,

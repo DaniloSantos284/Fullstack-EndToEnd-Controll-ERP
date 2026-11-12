@@ -224,7 +224,12 @@ describe('API de produtos com Supertest', () => {
       id: productId,
       quantity: 3,
       price: 12.5,
-      movements: [{ id: movementRows[0]?.id, type: 'ENTRY', quantity: 5 }],
+      movements: [{
+        id: movementRows[0]?.id,
+        productId,
+        type: 'ENTRY',
+        quantity: 5,
+      }],
       movementsPagination: { page: 1, limit: 1, hasNext: true },
     });
     expect(response.body.movements).toHaveLength(1);
@@ -248,6 +253,61 @@ describe('API de produtos com Supertest', () => {
     expect(databaseMock.execute).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ['detalhes', `/api/products/${secondProductId}`],
+    ['movimentos', `/api/products/${secondProductId}/movements`],
+  ])('retorna 404 para produto ausente em %s', async (_route, path) => {
+    databaseMock.execute.mockResolvedValueOnce([[], []]);
+
+    const response = await createHttpClient()
+      .get(path)
+      .expect(404);
+
+    expect(response.body).toMatchObject({
+      code: 'NOT_FOUND',
+      requestId: expect.any(String),
+    });
+    expect(databaseMock.execute).toHaveBeenCalledTimes(1);
+    expect(databaseMock.execute.mock.calls[0]?.[1]).toEqual([secondProductId]);
+  });
+
+  it.each([
+    ['entrada', 'entry'],
+    ['saída', 'exit'],
+  ])('rejeita quantidade inválida em %s antes de abrir uma transação', async (_operation, path) => {
+    const response = await createHttpClient()
+      .post(`/api/products/${productId}/stock/${path}`)
+      .send({ quantity: 1.5 })
+      .expect(400);
+
+    expect(response.body).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      requestId: expect.any(String),
+    });
+    expect(databaseMock.getConnection).not.toHaveBeenCalled();
+    expect(connectionMock.execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['entrada', 'entry'],
+    ['saída', 'exit'],
+  ])('retorna 404 para produto ausente em %s', async (_operation, path) => {
+    connectionMock.execute.mockResolvedValueOnce([[], []]);
+
+    const response = await createHttpClient()
+      .post(`/api/products/${productId}/stock/${path}`)
+      .send({ quantity: 2 })
+      .expect(404);
+
+    expect(response.body).toMatchObject({
+      code: 'NOT_FOUND',
+      requestId: expect.any(String),
+    });
+    expect(connectionMock.execute).toHaveBeenCalledTimes(1);
+    expect(connectionMock.rollback).toHaveBeenCalledTimes(1);
+    expect(connectionMock.release).toHaveBeenCalledTimes(1);
+  });
+
   it('registra entrada e responde 201 após commit', async () => {
     connectionMock.execute
       .mockResolvedValueOnce([[{ quantity: 3 }], []])
@@ -263,6 +323,25 @@ describe('API de produtos com Supertest', () => {
     expect(connectionMock.execute.mock.calls[1]?.[1]).toEqual([2, productId]);
   });
 
+  it('retorna conflito quando uma entrada ultrapassaria o limite de estoque', async () => {
+    connectionMock.execute.mockResolvedValueOnce([[
+      { quantity: 2_147_483_647 },
+    ], []]);
+
+    const response = await createHttpClient()
+      .post(`/api/products/${productId}/stock/entry`)
+      .send({ quantity: 1 })
+      .expect(409);
+
+    expect(response.body).toMatchObject({
+      code: 'CONFLICT',
+      requestId: expect.any(String),
+    });
+    expect(connectionMock.execute).toHaveBeenCalledTimes(1);
+    expect(connectionMock.rollback).toHaveBeenCalledTimes(1);
+    expect(connectionMock.release).toHaveBeenCalledTimes(1);
+  });
+
   it('retorna conflito para saída sem saldo e não grava movimento', async () => {
     connectionMock.execute.mockResolvedValueOnce([[{ quantity: 1 }], []]);
 
@@ -272,7 +351,7 @@ describe('API de produtos com Supertest', () => {
       .expect(409);
 
     expect(response.body).toMatchObject({
-      code: expect.any(String),
+      code: 'CONFLICT',
       requestId: expect.any(String),
     });
     expect(connectionMock.execute).toHaveBeenCalledTimes(1);

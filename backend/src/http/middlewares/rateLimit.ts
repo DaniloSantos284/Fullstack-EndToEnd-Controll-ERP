@@ -24,6 +24,11 @@ export function createRateLimit(maxRequests: number, windowMs: number): RequestH
     if (!current && buckets.size >= MAX_BUCKETS) {
       pruneExpired();
       if (buckets.size >= MAX_BUCKETS) {
+        let earliestResetAt = now + windowMs;
+        for (const bucket of buckets.values()) {
+          earliestResetAt = Math.min(earliestResetAt, bucket.resetAt);
+        }
+        res.setHeader("Retry-After", Math.max(1, Math.ceil((earliestResetAt - now) / 1000)));
         next(new HttpError("Limite de requisições excedido.", 429, "RATE_LIMIT_EXCEEDED"));
         return;
       }
@@ -36,7 +41,7 @@ export function createRateLimit(maxRequests: number, windowMs: number): RequestH
     buckets.set(key, bucket);
 
     if (bucket.count > maxRequests) {
-      res.setHeader("Retry-After", Math.ceil((bucket.resetAt - now) / 1000));
+      res.setHeader("Retry-After", Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)));
       next(new HttpError("Limite de requisições excedido.", 429, "RATE_LIMIT_EXCEEDED"));
       return;
     }

@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       DB_ROOT_PASSWORD: ci-root-only
       DB_USER: stock_user
@@ -30,24 +35,43 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Check whitespace
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = 'pull_request' ]; then
+            base="$PR_BASE_SHA"
+          else
+            base="$PUSH_BEFORE"
+          fi
+          if [ -z "$base" ] || [ "$base" = '0000000000000000000000000000000000000000' ]; then
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+          git diff --check "$base" "$HEAD_SHA"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Enable pnpm 12.14.0
-        run: |
-          corepack enable
-          corepack prepare pnpm@12.14.0 --activate
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
       - name: Install
         run: pnpm --dir backend install --frozen-lockfile
       - name: Audit all dependencies
         run: pnpm --dir backend audit --audit-level=high
       - name: Audit production dependencies
         run: pnpm --dir backend audit --prod --audit-level=high
-      - name: Lint, build and typecheck
-        run: |
-          pnpm --dir backend lint
-          pnpm --dir backend build
-          pnpm --dir backend test:typecheck
+      - name: Lint
+        run: pnpm --dir backend lint
+      - name: Build
+        run: pnpm --dir backend build
+      - name: Typecheck
+        run: pnpm --dir backend test:typecheck
       - name: Test
         run: pnpm --dir backend test:ci
       - name: Check Nginx gateway configuration
@@ -85,7 +109,7 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.gateway.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml config --quiet
       - name: Start disposable MySQL only
-        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --wait db
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --wait --wait-timeout 120 db
       - name: Load legacy schema and stock history
         shell: bash
         run: |
@@ -144,7 +168,7 @@ jobs:
             -e MYSQL_TEST_DATABASE="$DB_DATABASE" \
             migrate /migrations/tests/migrate.sh
       - name: Start API after successful migration
-        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --no-deps --build --wait api
+        run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --no-deps --build --wait --wait-timeout 120 api
       - name: Test real MySQL transactions
         env:
           NODE_ENV: test
@@ -163,8 +187,8 @@ jobs:
             TLS_CERT_PATH="$cert_dir/server.crt" TLS_KEY_PATH="$cert_dir/server.key" \
               docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gateway-test.yml "$@"
           }
-          gateway_compose up -d --no-deps --build --force-recreate --wait api
-          gateway_compose up -d --no-deps --wait gateway
+          gateway_compose up -d --no-deps --build --force-recreate --wait --wait-timeout 120 api
+          gateway_compose up -d --no-deps --wait --wait-timeout 120 gateway
           gateway_compose up --build --no-deps --abort-on-container-exit --exit-code-from gateway-tests gateway-tests
       - name: Show service diagnostics on failure
         if: failure()
@@ -180,20 +204,3 @@ jobs:
       - name: Stop disposable services
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.db-port.yml down --volumes --remove-orphans
-      - name: Check whitespace
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          if [ "$EVENT_NAME" = 'pull_request' ]; then
-            base="$PR_BASE_SHA"
-          else
-            base="$PUSH_BEFORE"
-          fi
-          if [ -z "$base" ] || [ "$base" = '0000000000000000000000000000000000000000' ]; then
-            base="$(git hash-object -t tree /dev/null)"
-          fi
-          git diff --check "$base" "$HEAD_SHA"

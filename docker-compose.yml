@@ -28,6 +28,7 @@ services:
       MYSQL_DATABASE: ${DB_DATABASE:-stockdb}
       MYSQL_USER: ${DB_USER:-stock_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      MYSQL_MIGRATION_LOCK_TIMEOUT: ${MYSQL_MIGRATION_LOCK_TIMEOUT:-120}
     volumes:
       - ./db/migrations:/migrations:ro
     entrypoint: ["/bin/sh", "/migrations/migrate.sh"]

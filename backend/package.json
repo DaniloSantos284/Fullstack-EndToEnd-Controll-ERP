@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" --max-warnings=0",
     "start": "node dist/server.js",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config jest.config.cjs",
     "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config jest.config.cjs --watch",

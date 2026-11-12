@@ -4,9 +4,9 @@ Serviço HTTP de estoque em Express e TypeScript. Ele é executado como processo
 
 ## Pré-requisitos
 
-- Node.js 22 LTS, versão `>=22.13.0 <23` (`nvm use` lê `.nvmrc`; Dockerfile e CI selecionam a mesma linha 22 explicitamente).
+- Node.js 22 LTS, versão `>=22.13.0 <23` (na raiz do repositório, `nvm use` lê `.nvmrc`; Dockerfile e CI selecionam a mesma linha 22 explicitamente).
 - Corepack habilitado para usar pnpm 12.14.0.
-- MySQL 9.7 para execução fora do Docker, ou Docker Engine com Compose para subir o ambiente descartável.
+- MySQL 9.7 para execução fora do Docker, ou Docker Engine com Compose para subir o ambiente descartável. Os overlays 8.0/8.4 são destinados apenas à manutenção de cópias de volumes; consulte a documentação de operação antes de usá-los.
 
 Na primeira instalação:
 
@@ -107,14 +107,14 @@ corepack pnpm audit --audit-level=high
 corepack pnpm audit --prod --audit-level=high
 ```
 
-`test:ci` executa testes unitários e HTTP com Jest/Supertest e gera cobertura. Eles usam pool MySQL simulado. `test:integration` exige um MySQL descartável real já inicializado:
+`test:ci` executa testes unitários e HTTP com Jest/Supertest e gera cobertura. Eles usam pool MySQL simulado. `test:integration` exige um MySQL descartável real já inicializado. O exemplo abaixo usa as credenciais explícitas de `.env.mock`:
 
 ```bash
 cd ..
-docker compose -f docker-compose.yml -f docker-compose.db-port.yml up -d --build --wait
+docker compose --env-file .env.mock -f docker-compose.yml -f docker-compose.db-port.yml up -d --build --wait
 cd backend
 NODE_ENV=test DB_HOST=127.0.0.1 PORT_DB=3307 \
-  DB_USER=stock_user DB_PASSWORD=uma-senha-local DB_DATABASE=stockdb \
+  DB_USER=stock_user DB_PASSWORD=mock-app-only DB_DATABASE=stockdb \
   corepack pnpm test:integration
 ```
 

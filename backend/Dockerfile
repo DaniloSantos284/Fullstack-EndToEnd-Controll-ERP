@@ -22,6 +22,8 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /usr/src/app/dist ./dist
 
+ENV PORT=4000
+
 USER node
 
 EXPOSE 4000

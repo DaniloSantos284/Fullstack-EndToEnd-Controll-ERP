@@ -1,4 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
+import express from 'express';
+import request from 'supertest';
+import { DomainError } from '../../src/domain/errors/DomainError';
+import { errorHandler } from '../../src/http/middlewares/errorHandler';
+import { createRateLimit } from '../../src/http/middlewares/rateLimit';
+import { requestContext } from '../../src/http/middlewares/requestContext';
 import { createHttpClient } from '../helpers/http-client';
 import { databaseMock } from '../helpers/database';
 
@@ -60,6 +66,49 @@ describe('contrato de erro HTTP', () => {
 
     expectErrorContract(response);
     expect(databaseMock.execute).not.toHaveBeenCalled();
+  });
+
+  it('converte DomainError para o envelope de validação documentado', async () => {
+    const errorApp = express();
+    errorApp.use(requestContext);
+    errorApp.get('/domain-error', (_req, _res, next) => {
+      next(new DomainError('Regra de domínio inválida.'));
+    });
+    errorApp.use(errorHandler);
+
+    const response = await request(errorApp)
+      .get('/domain-error')
+      .expect(400);
+
+    expectErrorContract(response);
+    expect(response.body).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      message: 'Regra de domínio inválida.',
+    });
+  });
+
+  it('inclui Retry-After numérico e positivo ao rejeitar por rate limit', async () => {
+    const rateLimitedApp = express();
+    rateLimitedApp.use(requestContext);
+    rateLimitedApp.use('/api', createRateLimit(1, 60_000));
+    rateLimitedApp.get('/api/probe', (_req, res) => {
+      res.status(204).end();
+    });
+    rateLimitedApp.use(errorHandler);
+
+    await request(rateLimitedApp).get('/api/probe').expect(204);
+    const response = await request(rateLimitedApp)
+      .get('/api/probe')
+      .expect(429);
+
+    expectErrorContract(response);
+    expect(response.body).toMatchObject({ code: 'RATE_LIMIT_EXCEEDED' });
+    const retryAfter = response.headers['retry-after'];
+    if (typeof retryAfter !== 'string') {
+      throw new Error('Retry-After header was not a string.');
+    }
+    expect(retryAfter).toMatch(/^[1-9]\d*$/);
+    expect(Number(retryAfter)).toBeGreaterThan(0);
   });
 
   it('limita o corpo JSON e retorna 413', async () => {

@@ -63,7 +63,7 @@ export class Product {
       props.name.trim().length === 0 ||
       props.name.length > MAX_NAME_LENGTH
     ) {
-      throw new DomainError("Product name is required");
+      throw new DomainError("Nome do produto é obrigatório.");
     }
 
     if (
